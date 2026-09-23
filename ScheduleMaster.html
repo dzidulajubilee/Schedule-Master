@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schedule Master</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#ffffff; --border:#dedad2; --text:#221f1a; --muted:#726d63;
+  --accent:#0f6b5c; --accent-ink:#ffffff;
+  --leave:#c94a3f; --leave-bg:#fbe6e3;
+  --warn:#b3771b; --bad:#c94a3f; --ok:#1d7a4c;
+  --chip-1:#2e6fec; --chip-1-bg:#e6edfd;
+  --chip-2:#c9781a; --chip-2-bg:#fbeadb;
+  --chip-3:#6a52d6; --chip-3-bg:#ece8fb;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
+    --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
+  --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;}
+h1,h2,h3{margin:0 0 8px;font-weight:700;}
+h1{font-size:18px;letter-spacing:-.01em;}
+h2{font-size:13px;color:var(--muted);text-transform:none;font-weight:600;margin:0 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:6px 10px;}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+button:hover{filter:brightness(0.97);}
+button:disabled{opacity:.45;cursor:not-allowed;}
+input,select{font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);padding:5px 7px;}
+label{font-size:12px;color:var(--muted);}
+table{border-collapse:collapse;width:100%;font-size:12.5px;}
+th,td{border:1px solid var(--border);padding:5px 7px;text-align:left;}
+th{background:var(--bg);font-weight:600;}
+.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:env(safe-area-inset-top,0px);z-index:5;}
+.top .spacer{flex:1;}
+.wrap{display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px;max-width:1500px;margin:0 auto;}
+@media(max-width:900px){.wrap{grid-template-columns:1fr;}}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;overflow-x:auto;}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0;}
+.pill-list{list-style:none;margin:6px 0;padding:0;display:flex;flex-wrap:wrap;gap:6px;}
+.pill{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;padding:3px 4px 3px 10px;font-size:12.5px;}
+.pill button{border:none;background:none;padding:2px 6px;border-radius:50%;}
+.status{font-size:12.5px;color:var(--muted);margin-top:6px;white-space:pre-wrap;}
+.shifttype-row{display:grid;grid-template-columns:22px 150px 74px 74px 78px 78px 78px 56px 56px;gap:6px;align-items:center;margin:3px 0;font-size:12px;}
+.shifttype-row input[type=text],.shifttype-row input[type=time]{width:100%;padding:3px 4px;}
+.shifttype-row input[type=number]{width:100%;padding:3px 2px;text-align:center;}
+.shifttype-row>span{white-space:normal;line-height:1.15;text-align:center;}
+.calwrap{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;}
+.calhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:12px;}
+.legend-pill{display:inline-flex;align-items:center;gap:6px;background:var(--pill-bg);color:var(--pill-ink);padding:4px 11px;border-radius:999px;font-weight:600;}
+.legend-pill .legend-time{font-weight:500;opacity:.75;font-size:10.5px;}
+.legend-pill.leave-pill{background:var(--leave-bg);color:var(--leave);}
+#calGrid{display:flex;flex-direction:column;gap:6px;}
+.calweek{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.wd{text-align:center;font-size:11px;color:var(--muted);font-weight:600;padding-bottom:2px;}
+.day{border:1px solid var(--border);border-radius:8px;min-height:88px;padding:5px;display:flex;flex-direction:column;gap:2px;}
+.daytop{display:flex;align-items:flex-start;justify-content:space-between;gap:4px;}
+.day.weekend{background:color-mix(in srgb, var(--bg) 60%, var(--panel));}
+.day.empty{border:none;}
+.daynum{font-size:11px;color:var(--muted);font-weight:600;}
+.chip{display:block;font-size:10.5px;border-radius:5px;padding:1px 5px;margin-top:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chip.leave{background:var(--leave-bg);color:var(--leave);font-weight:600;}
+.badges{display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:62%;flex:0 0 auto;}
+.badge-pill{background:var(--badge-bg);color:var(--badge-ink);font-size:9px;font-weight:600;font-variant-numeric:tabular-nums;border-radius:5px;padding:1px 6px;white-space:nowrap;line-height:1.5;}
+.badge-pill.low{background:var(--leave-bg);color:var(--leave);font-weight:700;}
+table.workload td.bad{color:var(--bad);}
+table.workload td.ok{color:var(--ok);}
+.small{font-size:11px;color:var(--muted);}
+.hint{font-size:11px;color:var(--muted);margin:2px 0 6px;}
+.mpwd{text-align:center;font-size:10px;color:var(--muted);font-weight:600;padding-bottom:2px;}
+.mpgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.mpday{border:1px solid var(--border);border-radius:6px;min-height:38px;padding:2px 1px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:2px;cursor:pointer;font-size:10.5px;user-select:none;background:var(--panel);transition:outline-color .1s,background .1s;}
+.mpday:hover{filter:brightness(0.97);}
+.mpday.weekend{background:color-mix(in srgb, var(--bg) 60%, var(--panel));}
+.mpday.leave{cursor:not-allowed;opacity:.55;}
+.mpday.empty{border:none;visibility:hidden;cursor:default;}
+.mpday.selected{outline:2px solid var(--accent);outline-offset:-1px;background:color-mix(in srgb, var(--accent) 16%, var(--panel));}
+.mpdaynum{font-size:10.5px;color:var(--muted);font-weight:600;}
+.mptag{font-size:8.5px;font-weight:600;border-radius:4px;padding:0 4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@page{ size: landscape; margin: 9mm; }
+@media print{
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel{display:none !important;}
+  .wrap{display:block;padding:0;}
+  .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
+  #validationPage{page-break-before:always;}
+  body{font-size:11px;}
+  .badges.hideprint{display:none;}
+  #coverageSection.hideprint{display:none;}
+  /* force the browser to actually print background colors instead of silently dropping them */
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}
+  /* deeper, more saturated palette for print only - the on-screen pastel tones read as washed-out on paper */
+  :root{
+    --chip-1:#0d3fb0; --chip-1-bg:#b9cdf7;
+    --chip-2:#8a4400; --chip-2-bg:#f0c98a;
+    --chip-3:#3a1f99; --chip-3-bg:#cabdf0;
+    --leave:#8f1710; --leave-bg:#f2b3ac;
+    --border:#8a8578;
+  }
+  .chip{font-weight:700;border:1px solid rgba(0,0,0,.25);font-size:9px;padding:0 4px;margin-top:1px;}
+  .badge-pill{border:1px solid rgba(0,0,0,.2);font-size:8px;padding:0 4px;}
+  .grid,.calweek{gap:3px;}
+  .day{min-height:0;padding:3px;}
+  .daynum{font-size:9.5px;}
+  .legend{margin-bottom:6px;gap:5px;}
+  .legend-pill{padding:2px 8px;font-size:10px;}
+  /* a week is one visual unit - never let a print page-break fall in the middle of one (fixes overflow/orphan-fragment bugs) */
+  .calweek{break-inside:avoid;page-break-inside:avoid;}
+  .calhead select{display:none;}
+  /* bold dark weekday header pills instead of plain small gray labels */
+  .wd{background:#1e293b;color:#fff;border-radius:6px;padding:6px 0;font-size:11px;letter-spacing:.4px;}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1 style="margin:0">Schedule Master</h1>
+  <select id="selMonth"></select>
+  <input type="number" id="selYear" style="width:70px">
+  <button id="btnAuto" class="primary">Auto Plot</button>
+  <button id="btnClear">Clear month</button>
+  <button id="btnPrint">Print / PDF</button>
+  <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="showCounts"> Show x/y counts in print</label>
+  <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="printCoverage"> Include coverage check in print</label>
+  <div class="spacer"></div>
+  <button id="btnSave" class="primary">Save</button>
+  <button id="btnReload">Reload</button>
+  <button id="btnExport">Export staff.json</button>
+  <button id="btnImport">Import staff.json</button>
+  <input type="file" id="fileImport" accept="application/json" style="display:none">
+  <button id="btnResetAll" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all local data</button>
+</div>
+
+<div class="wrap">
+<div id="leftpanel">
+
+  <div class="panel">
+    <h2>1 · Staff</h2>
+    <div class="row"><input type="text" id="newStaff" placeholder="Full name" style="flex:1"><button id="addStaff">Add</button></div>
+    <ul class="pill-list" id="staffList"></ul>
+  </div>
+
+  <div class="panel">
+    <h2>3 · Keep apart (optional)</h2>
+    <div id="keepApartUI"></div>
+    <div class="hint">A pair never shares a weekend shift, or a shift flagged Keep Apart above. Sharing another weekday shift is allowed but flagged, and asks for confirmation in Manual Plot.</div>
+  </div>
+
+  <div class="panel">
+    <h2>4 · Leave</h2>
+    <select id="leavePerson"></select>
+    <div class="row"><button id="leaveSelectAll">Select all</button><button id="leaveClearSel">Clear selection</button><button id="leaveAdd" class="primary">Save leave for this month</button></div>
+    <div class="row"><button id="leaveClearPerson">Clear all leave for this person</button></div>
+    <div class="hint">Tick/untick days then click "Save leave for this month" — it now both adds and removes to match what's ticked. "Clear all leave for this person" wipes their leave record across every month.</div>
+    <div class="grid" id="leaveGrid" style="margin-top:6px;grid-template-columns:repeat(7,1fr);"></div>
+    <div class="hint" style="margin-top:10px;">All leave currently saved, by person (click × to remove a date):</div>
+    <div id="leaveList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
+  </div>
+
+  <div class="panel">
+    <h2>5 · Plot manually</h2>
+    <div class="row"><select id="mpPerson" style="flex:1"></select></div>
+    <div class="row" id="mpTypeRow"></div>
+    <div class="hint" id="mpSelHint">Click days below to select them, then choose a shift (or Off) and apply.</div>
+    <div class="grid" id="mpWeekdayRow" style="margin-top:6px;"></div>
+    <div id="mpCalGrid"></div>
+    <div class="row" style="margin-top:8px;"><button id="mpSelectAll">Select all</button><button id="mpClearSel">Clear selection</button></div>
+    <button id="mpApply" class="primary" style="margin-top:8px;width:100%;">Apply shift to selected days</button>
+    <div class="status" id="status">Ready.</div>
+  </div>
+
+</div>
+
+<div>
+  <div class="panel" id="shiftTypesPanel">
+    <h2>2 · Shift types &amp; coverage rules</h2>
+    <div class="row">
+      <label>Number of shifts:</label>
+      <select id="shiftCount"><option value="2">2 (Day / Night)</option><option value="3">3 (Morning / Afternoon / Evening)</option></select>
+      <span class="small">Presets for Autofill</span>
+    </div>
+    <div class="shifttype-row" style="font-weight:600;color:var(--muted);">
+      <span></span><span style="text-align:left;">Name</span><span>Start</span><span>End</span><span title="How many people Autofill aims to put on this shift on a weekday">Weekday target</span><span title="The lowest headcount this shift may drop to on a weekday, when marked Flex">Weekday min</span><span title="How many people Autofill aims to put on this shift on a weekend (also the weekend minimum)">Weekend target</span><span title="Lets this shift sag from its Weekday target to its Weekday min on a quiet weekday">Flex</span><span title="Keep-apart pair is never put on this shift together, even on weekdays">Keep Apart</span>
+    </div>
+    <div id="shiftTypesEditor"></div>
+    <div class="row" style="margin-top:8px;">
+      <label>Expected shifts/person</label><input type="number" id="expShifts" min="1" max="31" style="width:55px">
+      <label title="Minimum gap between the end of one shift and the start of a person's next one. Manual Plot blocks a pick that would give less rest than this.">Min rest (hrs)</label><input type="number" id="restHrs" min="0" max="24" style="width:50px" title="Minimum gap between the end of one shift and the start of a person's next one. Manual Plot blocks a pick that would give less rest than this.">
+      <label>Rotation</label>
+      <select id="rotation"><option value="auto">Auto</option><option value="3">3 on / 3 off</option><option value="2">2 on / 2 off</option></select>
+    </div>
+    <div class="row"><label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="requireAll"> Every person needs every shift type</label></div>
+    <div class="row"><label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="weekendLeaveNoQuota"> Weekend leave doesn't reduce expected shifts</label></div>
+    <div class="hint">
+      <strong>Legend:</strong>
+      <ul style="margin:4px 0 0 18px;padding:0;">
+        <li><strong>Weekday target</strong>: how many people Autofill aims to put on this shift on a weekday</li>
+        <li><strong>Weekday min</strong>: the lowest headcount this shift is allowed to drop to on a weekday, but only when it's marked Flex</li>
+        <li><strong>Weekend target</strong>: how many people Autofill aims to put on this shift on a weekend; weekends are always strict, so this number is also the weekend minimum</li>
+        <li><strong>Flex</strong>: lets this shift type sag from its Weekday target down to its Weekday min on a quiet weekday</li>
+        <li><strong>Keep Apart</strong>: a keep-apart pair is never put on this shift together, even on weekdays</li>
+        <li><strong>Min rest (hrs)</strong>: minimum gap required between the end of one shift and the start of the next one for the same person</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="calwrap">
+    <div class="calhead">
+      <h2 style="border:none;padding:0;margin:0" id="calTitle">—</h2>
+      <select id="viewSel"></select>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="grid" id="weekdayRow"></div>
+    <div id="calGrid"></div>
+  </div>
+
+  <div class="panel" style="margin-top:14px;" id="validationPage">
+    <h2>Workload &amp; validation</h2>
+    <div style="overflow-x:auto"><table class="workload" id="workloadTable"></table></div>
+    <div id="coverageSection">
+      <h2 style="margin-top:14px;">Coverage check</h2>
+      <div id="coverageCheck" class="small"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CHIP_COLORS=[["var(--chip-1)","var(--chip-1-bg)"],["var(--chip-2)","var(--chip-2-bg)"],["var(--chip-3)","var(--chip-3-bg)"]];
+
+function defaultState(){
+  const now=new Date();
+  return {
+    year: now.getUTCFullYear(), month: now.getUTCMonth(),
+    staff: [],
+    shiftTypes: [
+      {id:"day", name:"Day", start:"07:00", end:"19:00", wdTarget:2, wdMin:1, weTarget:2, flex:true, ka:false},
+      {id:"night", name:"Night", start:"19:00", end:"07:00", wdTarget:2, wdMin:2, weTarget:2, flex:false, ka:true}
+    ],
+    expShifts:14, restHrs:11, rotation:"auto", requireAll:true, weekendLeaveNoQuota:true, includeCoverageInPrint:false,
+    keepApart:[[null,null],[null,null]],
+    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null
+  };
+}
+let S=load();
+function load(){
+  try{ const raw=localStorage.getItem("planthat_state"); if(raw) return Object.assign(defaultState(), JSON.parse(raw)); }catch(e){}
+  return defaultState();
+}
+function save(){ try{ localStorage.setItem("planthat_state", JSON.stringify(S)); }catch(e){} }
+$("btnResetAll").addEventListener("click",()=>{
+  if(!confirm("This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. staff.json on disk is untouched. This can't be undone. Continue?")) return;
+  try{ localStorage.removeItem("planthat_state"); }catch(e){}
+  location.reload();
+});
+
+// ---------- date helpers (all UTC) ----------
+function ymd(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+function daysInMonth(y,m){ return new Date(Date.UTC(y,m+1,0)).getUTCDate(); }
+function weekdayOf(y,m,d){ return new Date(Date.UTC(y,m,d)).getUTCDay(); } // 0=Sun
+function isWeekend(y,m,d){ const w=weekdayOf(y,m,d); return w===0||w===6; }
+function addDaysStr(dateStr,n){ const [y,m,d]=dateStr.split("-").map(Number); const dt=new Date(Date.UTC(y,m-1,d)); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); }
+function toMinutes(hhmm){ const [h,m]=hhmm.split(":").map(Number); return h*60+m; }
+
+function shiftById(id){ return S.shiftTypes.find(t=>t.id===id); }
+function normalizedPairs(){
+  // valid, de-duplicated keep-apart pairs: drops empty/incomplete pairs and a pair naming the same
+  // person twice, and collapses the same pair entered in both slots (in either order) into one
+  const seen=new Set(); const out=[];
+  S.keepApart.forEach(p=>{
+    if(!p[0]||!p[1]||p[0]===p[1]) return;
+    const key=[p[0],p[1]].slice().sort().join("\u241F");
+    if(seen.has(key)) return;
+    seen.add(key);
+    out.push([p[0],p[1]]);
+  });
+  return out;
+}
+function personShift(dateStr,person){ return (S.shifts[dateStr]||{})[person]||null; }
+function setPersonShift(dateStr,person,typeId){
+  if(!S.shifts[dateStr]) S.shifts[dateStr]={};
+  if(typeId) S.shifts[dateStr][person]=typeId; else delete S.shifts[dateStr][person];
+  if(Object.keys(S.shifts[dateStr]).length===0) delete S.shifts[dateStr];
+}
+function isOnLeave(person,dateStr){ return !!(S.leave[person] && S.leave[person].includes(dateStr)); }
+
+// rest gap in hours between end of shift A (on dateA) and start of shift B (on dateB, the very next calendar day)
+function restGapHours(typeA,typeB){
+  const endA=toMinutes(typeA.end)+(toMinutes(typeA.end)<=toMinutes(typeA.start)?24*60:0); // minutes after typeA's own start-of-day, crossing midnight if needed
+  const startNextDay=toMinutes(typeB.start)+24*60; // typeB starts on the day AFTER dateA
+  return (startNextDay-endA)/60;
+}
+
+function quotaFor(person,y=S.year,m=S.month){
+  const leaveDays=(S.leave[person]||[]).filter(d=>{
+    const [yy,mm,dd]=d.split("-").map(Number);
+    if(yy!==y || mm-1!==m) return false; // only leave taken in the month being planned counts against that month's quota
+    if(S.weekendLeaveNoQuota && isWeekend(yy,mm-1,dd)) return false;
+    return true;
+  }).length;
+  return Math.max(0,S.expShifts-leaveDays);
+}
+function totalShiftsFor(person,exceptDate,y=S.year,m=S.month){
+  let n=0;
+  for(const d in S.shifts){
+    if(d===exceptDate) continue;
+    const [yy,mm]=d.split("-").map(Number);
+    if(yy!==y || mm-1!==m) continue; // only count shifts within the month in question
+    if(S.shifts[d][person]) n++;
+  }
+  return n;
+}
+
+// ---------- UI: shift types editor ----------
+function renderShiftTypes(){
+  $("shiftCount").value=String(S.shiftTypes.length);
+  const box=$("shiftTypesEditor"); box.innerHTML="";
+  S.shiftTypes.forEach((t,i)=>{
+    const row=document.createElement("div"); row.className="shifttype-row";
+    row.innerHTML=`
+      <span class="dot" style="background:${CHIP_COLORS[i%3][0]};width:14px;height:14px;border-radius:4px;"></span>
+      <input type="text" value="${t.name}" data-f="name">
+      <input type="time" value="${t.start}" data-f="start">
+      <input type="time" value="${t.end}" data-f="end">
+      <input type="number" value="${t.wdTarget}" min="0" data-f="wdTarget">
+      <input type="number" value="${t.wdMin}" min="0" data-f="wdMin" ${t.flex?"":"disabled"}>
+      <input type="number" value="${t.weTarget}" min="0" data-f="weTarget">
+      <input type="checkbox" ${t.flex?"checked":""} data-f="flex">
+      <input type="checkbox" ${t.ka?"checked":""} data-f="ka">`;
+    row.querySelectorAll("[data-f]").forEach(el=>{
+      el.addEventListener("change",()=>{
+        const f=el.dataset.f;
+        t[f]= el.type==="checkbox"?el.checked : (el.type==="number"?Number(el.value):el.value);
+        if(f==="flex" && !t.flex) t.wdMin=t.wdTarget;
+        save(); renderShiftTypes(); renderAll();
+      });
+    });
+    box.appendChild(row);
+  });
+  renderLegend(); renderKeepApartUI(); renderManualTypeRow();
+}
+$("shiftCount").addEventListener("change",()=>{
+  const n=Number($("shiftCount").value);
+  if(n===2){ S.shiftTypes=[
+    {id:"day",name:"Day",start:"07:00",end:"19:00",wdTarget:2,wdMin:1,weTarget:2,flex:true,ka:false},
+    {id:"night",name:"Night",start:"19:00",end:"07:00",wdTarget:2,wdMin:2,weTarget:2,flex:false,ka:true}
+  ];} else { S.shiftTypes=[
+    {id:"morning",name:"Morning",start:"06:00",end:"14:00",wdTarget:2,wdMin:1,weTarget:2,flex:true,ka:false},
+    {id:"afternoon",name:"Afternoon",start:"14:00",end:"22:00",wdTarget:2,wdMin:1,weTarget:2,flex:true,ka:false},
+    {id:"evening",name:"Evening",start:"22:00",end:"06:00",wdTarget:2,wdMin:2,weTarget:2,flex:false,ka:true}
+  ];}
+  save(); renderShiftTypes(); renderAll();
+});
+
+function renderLegend(){
+  const el=$("legend"); el.innerHTML="";
+  S.shiftTypes.forEach((t,i)=>{
+    const [ink,bg]=CHIP_COLORS[i%3];
+    el.innerHTML+=`<span class="legend-pill" style="--pill-ink:${ink};--pill-bg:${bg}">${t.name} <span class="legend-time">${t.start}–${t.end}</span></span>`;
+  });
+  el.innerHTML+=`<span class="legend-pill leave-pill">Leave</span>`;
+}
+
+// ---------- staff ----------
+function renderStaff(){
+  const ul=$("staffList"); ul.innerHTML="";
+  S.staff.forEach(name=>{
+    const li=document.createElement("li"); li.className="pill";
+    li.innerHTML=`${name}<button title="Remove">✕</button>`;
+    li.querySelector("button").addEventListener("click",()=>{
+      S.staff=S.staff.filter(n=>n!==name);
+      delete S.leave[name];
+      for(const d in S.shifts) delete S.shifts[d][name];
+      S.keepApart.forEach(p=>{ if(p[0]===name)p[0]=null; if(p[1]===name)p[1]=null; });
+      save(); renderAll();
+    });
+    ul.appendChild(li);
+  });
+  [ "leavePerson","mpPerson"].forEach(id=>{
+    const sel=$(id); const cur=sel.value; sel.innerHTML="";
+    S.staff.forEach(n=>sel.innerHTML+=`<option value="${n}">${n}</option>`);
+    if(S.staff.includes(cur)) sel.value=cur;
+  });
+  const view=$("viewSel"); const curV=view.value;
+  view.innerHTML=`<option value="__all__">Everyone</option>`+S.staff.map(n=>`<option value="${n}">${n}</option>`).join("");
+  view.value=S.staff.includes(curV)||curV==="__all__"?curV:"__all__";
+}
+$("addStaff").addEventListener("click",()=>{
+  const v=$("newStaff").value.trim();
+  if(!v) return;
+  if(!S.staff.includes(v)){ S.staff.push(v); S.staff.sort(); save(); renderAll(); }
+  $("newStaff").value="";
+});
+$("newStaff").addEventListener("keydown",e=>{ if(e.key==="Enter") $("addStaff").click(); });
+
+// ---------- keep apart ----------
+function renderKeepApartUI(){
+  const box=$("keepApartUI"); box.innerHTML="";
+  [0,1].forEach(i=>{
+    const p=S.keepApart[i];
+    const row=document.createElement("div"); row.className="row";
+    row.innerHTML=`<label>Pair ${i+1}</label>
+      <select data-i="${i}" data-k="0"><option value="">—</option>${S.staff.map(n=>`<option ${p[0]===n?"selected":""} value="${n}">${n}</option>`).join("")}</select>
+      <select data-i="${i}" data-k="1"><option value="">—</option>${S.staff.map(n=>`<option ${p[1]===n?"selected":""} value="${n}">${n}</option>`).join("")}</select>`;
+    row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
+      S.keepApart[i][Number(sel.dataset.k)]=sel.value||null; save();
+      const pr=S.keepApart[i];
+      if(pr[0] && pr[1] && pr[0]===pr[1]) setStatus(`Pair ${i+1} needs two different people — it won't be applied until you pick someone else.`);
+      renderWorkload(); renderCoverage();
+    }));
+    box.appendChild(row);
+  });
+}
+
+// ---------- leave ----------
+function renderLeaveGrid(){
+  const grid=$("leaveGrid"); grid.innerHTML="";
+  const n=daysInMonth(S.year,S.month);
+  for(let d=1; d<=n; d++){
+    const ds=ymd(S.year,S.month,d);
+    const cell=document.createElement("label");
+    cell.style.cssText="border:1px solid var(--border);border-radius:6px;padding:4px;text-align:center;font-size:11px;cursor:pointer;";
+    const person=$("leavePerson").value;
+    const checked=person && isOnLeave(person,ds);
+    if(checked) cell.style.background="var(--leave-bg)";
+    cell.innerHTML=`<input type="checkbox" data-d="${ds}" style="display:block;margin:0 auto 2px" ${checked?"checked":""}>${d}`;
+    grid.appendChild(cell);
+  }
+  renderLeaveList();
+}
+function renderLeaveList(){
+  const list=$("leaveList"); if(!list) return;
+  list.innerHTML="";
+  const people=Object.keys(S.leave).filter(p=>S.leave[p] && S.leave[p].length).sort();
+  if(!people.length){ list.innerHTML=`<span class="hint" style="margin:0;">No leave saved for anyone yet.</span>`; return; }
+  people.forEach(person=>{
+    const row=document.createElement("div");
+    row.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center;";
+    const label=document.createElement("span");
+    label.textContent=person+":";
+    label.style.cssText="font-weight:600;min-width:110px;";
+    row.appendChild(label);
+    const ranges=toDateRanges(S.leave[person]);
+    ranges.forEach(r=>{
+      const chip=document.createElement("span");
+      chip.className="chip leave";
+      chip.style.cssText="display:inline-flex;align-items:center;gap:6px;cursor:default;";
+      const label2=r.start===r.end ? fmtShort(r.start) : `${fmtShort(r.start)} – ${fmtShort(r.end)}`;
+      chip.innerHTML=`${label2} <button type="button" data-remove-person="${person}" data-remove-start="${r.start}" data-remove-end="${r.end}" title="Remove ${r.start===r.end?"this date":"this date range"}" style="background:none;border:none;color:inherit;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;">×</button>`;
+      row.appendChild(chip);
+    });
+    list.appendChild(row);
+  });
+  list.querySelectorAll("[data-remove-start]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const start=btn.getAttribute("data-remove-start"), end=btn.getAttribute("data-remove-end");
+      const p=btn.getAttribute("data-remove-person");
+      if(!p || !S.leave[p]) return;
+      S.leave[p]=S.leave[p].filter(x=>x<start || x>end);
+      if(!S.leave[p].length) delete S.leave[p];
+      save(); setStatus(`Removed ${start===end?start:start+" to "+end} from ${p}'s leave.`); renderAll();
+    });
+  });
+}
+// group a sorted/unsorted array of "YYYY-MM-DD" strings into consecutive-day ranges
+function toDateRanges(dates){
+  const sorted=[...dates].sort();
+  const ranges=[]; let curStart=null, curEnd=null;
+  const nextDay=(ds)=>{ const [y,m,d]=ds.split("-").map(Number); const dt=new Date(y,m-1,d); dt.setDate(dt.getDate()+1); return ymd(dt.getFullYear(),dt.getMonth(),dt.getDate()); };
+  sorted.forEach(ds=>{
+    if(curStart===null){ curStart=ds; curEnd=ds; }
+    else if(nextDay(curEnd)===ds){ curEnd=ds; }
+    else{ ranges.push({start:curStart,end:curEnd}); curStart=ds; curEnd=ds; }
+  });
+  if(curStart!==null) ranges.push({start:curStart,end:curEnd});
+  return ranges;
+}
+function fmtShort(ds){ const [y,m,d]=ds.split("-").map(Number); return `${d} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m-1]}`; }
+$("leavePerson").addEventListener("change",renderLeaveGrid);
+$("leaveSelectAll").addEventListener("click",()=>{ $("leaveGrid").querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=true); });
+$("leaveClearSel").addEventListener("click",()=>{ $("leaveGrid").querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=false); });
+$("leaveAdd").addEventListener("click",()=>{
+  const person=$("leavePerson").value; if(!person){ setStatus("Pick a person first."); return; }
+  const boxes=[...$("leaveGrid").querySelectorAll("input[type=checkbox]")];
+  const checkedDates=boxes.filter(c=>c.checked).map(c=>c.dataset.d);
+  const uncheckedDates=boxes.filter(c=>!c.checked).map(c=>c.dataset.d);
+  if(!S.leave[person]) S.leave[person]=[];
+  // an unticked day that was previously on leave is now REMOVED (this used to only ever add, never remove)
+  S.leave[person]=S.leave[person].filter(ds=>!uncheckedDates.includes(ds));
+  checkedDates.forEach(ds=>{
+    if(!S.leave[person].includes(ds)) S.leave[person].push(ds);
+    setPersonShift(ds,person,null);
+  });
+  // weekend sandwiched between leave days gets added automatically
+  S.leave[person].sort();
+  for(let i=0;i<S.leave[person].length-1;i++){
+    const a=S.leave[person][i], b=S.leave[person][i+1];
+    let cursor=a;
+    while(addDaysStr(cursor,1)!==b && addDaysStr(cursor,1)<b){
+      cursor=addDaysStr(cursor,1);
+      const [yy,mm,dd]=cursor.split("-").map(Number);
+      if(isWeekend(yy,mm-1,dd) && !S.leave[person].includes(cursor)){ S.leave[person].push(cursor); setPersonShift(cursor,person,null); }
+    }
+  }
+  S.leave[person].sort();
+  save(); setStatus(`Saved leave for ${person} this month: ${checkedDates.length} day(s) on leave.`); renderAll();
+});
+$("leaveClearPerson").addEventListener("click",()=>{
+  const person=$("leavePerson").value; if(!person){ setStatus("Pick a person first."); return; }
+  if(!S.leave[person] || !S.leave[person].length){ setStatus(`${person} has no leave recorded.`); return; }
+  if(!confirm(`Remove ALL recorded leave for ${person}, across every month? This can't be undone.`)) return;
+  delete S.leave[person];
+  save(); setStatus(`Cleared all leave for ${person}.`); renderAll();
+});
+
+// ---------- manual plot ----------
+function renderManualTypeRow(){
+  const row=$("mpTypeRow"); row.innerHTML="";
+  S.shiftTypes.forEach(t=>row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="${t.id}">${t.name}</label>`);
+  row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="" checked>Off</label>`;
+}
+function setStatus(msg){ $("status").textContent=msg; }
+
+// dates the user has picked in the Manual Plot mini calendar (persists across incidental re-renders,
+// cleared on Apply, on switching person/month/year, or via "Clear selection")
+const mpSelected=new Set();
+
+function renderManualCalendar(){
+  const wdRow=$("mpWeekdayRow"); wdRow.innerHTML=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="mpwd">${w}</div>`).join("");
+  const host=$("mpCalGrid"); host.innerHTML="";
+  const person=$("mpPerson").value;
+  const grid=document.createElement("div"); grid.className="mpgrid";
+  const firstWd=weekdayOf(S.year,S.month,1);
+  const n=daysInMonth(S.year,S.month);
+  for(let i=0;i<firstWd;i++){ const blank=document.createElement("div"); blank.className="mpday empty"; grid.appendChild(blank); }
+  for(let d=1; d<=n; d++){
+    const ds=ymd(S.year,S.month,d);
+    const weekend=isWeekend(S.year,S.month,d);
+    const onLeave=person && isOnLeave(person,ds);
+    const existing=person && personShift(ds,person);
+    const cell=document.createElement("div");
+    cell.className="mpday"+(weekend?" weekend":"")+(onLeave?" leave":"")+(mpSelected.has(ds)?" selected":"");
+    let tag="";
+    if(onLeave){
+      cell.title=`${person} is on leave — can't plot a shift.`;
+      tag=`<span class="mptag" style="background:var(--leave-bg);color:var(--leave)">Leave</span>`;
+    } else if(existing){
+      const idx=S.shiftTypes.findIndex(t=>t.id===existing);
+      const t=shiftById(existing);
+      const [ink,bg]=CHIP_COLORS[idx%3];
+      cell.title=`${person} already has ${t.name} on ${ds}.`;
+      tag=`<span class="mptag" style="background:${bg};color:${ink}">${t.name}</span>`;
+    }
+    cell.innerHTML=`<div class="mpdaynum">${d}</div>${tag}`;
+    if(!onLeave) cell.addEventListener("click",()=>{
+      if(mpSelected.has(ds)) mpSelected.delete(ds); else mpSelected.add(ds);
+      renderManualCalendar();
+    });
+    grid.appendChild(cell);
+  }
+  while(grid.children.length%7!==0){ const blank=document.createElement("div"); blank.className="mpday empty"; grid.appendChild(blank); }
+  host.appendChild(grid);
+  $("mpSelHint").textContent = mpSelected.size
+    ? `${mpSelected.size} day${mpSelected.size===1?"":"s"} selected.`
+    : "Click days below to select them, then choose a shift (or Off) and apply.";
+}
+$("mpPerson").addEventListener("change",()=>{ mpSelected.clear(); renderManualCalendar(); });
+$("mpSelectAll").addEventListener("click",()=>{
+  const person=$("mpPerson").value;
+  const n=daysInMonth(S.year,S.month);
+  mpSelected.clear();
+  for(let d=1; d<=n; d++){
+    const ds=ymd(S.year,S.month,d);
+    if(!(person && isOnLeave(person,ds))) mpSelected.add(ds);
+  }
+  renderManualCalendar();
+});
+$("mpClearSel").addEventListener("click",()=>{ mpSelected.clear(); renderManualCalendar(); });
+
+$("mpApply").addEventListener("click",()=>{
+  const person=$("mpPerson").value;
+  const typeId=(document.querySelector('input[name=mpType]:checked')||{}).value||"";
+  if(!person){ setStatus("Pick a person first."); return; }
+  if(!mpSelected.size){ setStatus("Select at least one day first."); return; }
+  const dates=[...mpSelected].sort();
+  if(!typeId){
+    dates.forEach(ds=>setPersonShift(ds,person,null));
+    save(); setStatus(`Removed ${person}'s shift on ${dates.length} day(s): ${dates.join(", ")}.`);
+    mpSelected.clear(); renderAll(); return;
+  }
+  let applied=0; const blocked=[]; const softClashes=[];
+  dates.forEach(ds=>{
+    const r=canPlaceShift(person,ds,typeId,true);
+    if(r.blocked) blocked.push(`${ds} — ${r.reason}`);
+    else if(r.confirm) softClashes.push({ds,reason:r.reason});
+    else { setPersonShift(ds,person,typeId); applied++; }
+  });
+  if(softClashes.length){
+    const msg=softClashes.map(x=>`${x.ds} — ${x.reason}`).join("\n");
+    if(confirm(`${softClashes.length} of the selected day(s) have a soft keep-apart clash:\n\n${msg}\n\nPlace them anyway?`)){
+      softClashes.forEach(x=>{ setPersonShift(x.ds,person,typeId); applied++; });
+    }
+  }
+  save();
+  let msg=`${person} → ${shiftById(typeId).name}: applied to ${applied} of ${dates.length} selected day(s).`;
+  if(blocked.length) msg+=`\nBlocked (${blocked.length}):\n`+blocked.join("\n");
+  setStatus(msg);
+  mpSelected.clear();
+  renderAll();
+});
+
+function canPlaceShift(person,dateStr,typeId,forManual){
+  const type=shiftById(typeId);
+  const [y,m,d]=dateStr.split("-").map(Number);
+  if(isOnLeave(person,dateStr)) return {blocked:true,reason:`${person} is on leave on ${dateStr}.`};
+  const prevD=addDaysStr(dateStr,-1), nextD=addDaysStr(dateStr,1);
+  const prevType=personShift(prevD,person), nextType=personShift(nextD,person);
+  if(prevType && prevType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day before (${shiftById(prevType).name}).`};
+  if(nextType && nextType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day after (${shiftById(nextType).name}).`};
+  if(prevType){ const gap=restGapHours(shiftById(prevType),type); if(prevType!==typeId && gap<S.restHrs) return {blocked:true,reason:`Only ${gap}h rest before this shift (need ${S.restHrs}h).`}; }
+  const weekend=isWeekend(y,m-1,d);
+  const hardClashes=[], softClashes=[];
+  for(const pair of normalizedPairs()){
+    if(!pair.includes(person)) continue;
+    const partner=pair[0]===person?pair[1]:pair[0];
+    const partnerType=personShift(dateStr,partner);
+    if(partnerType===typeId){
+      if(weekend || type.ka) hardClashes.push(partner); else softClashes.push(partner);
+    }
+  }
+  if(hardClashes.length){
+    const names=hardClashes.join(", ");
+    return {blocked:true,reason:`Keep-apart: ${names} already ${hardClashes.length>1?"have":"has"} ${type.name} on ${dateStr}.`};
+  }
+  if(softClashes.length){
+    const names=softClashes.join(", ");
+    return {confirm:true,reason:`${names} ${softClashes.length>1?"share":"shares"} this weekday ${type.name} shift (keep-apart pair).`};
+  }
+  const quota=quotaFor(person,y,m-1);
+  const current=totalShiftsFor(person,dateStr,y,m-1);
+  if(current>=quota) return {blocked:true,reason:`${person} is already at their quota (${quota}).`};
+  return {ok:true};
+}
+
+// ---------- calendar / month controls ----------
+function fillMonthYear(){
+  $("selMonth").innerHTML=MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join("");
+  $("selMonth").value=S.month; $("selYear").value=S.year;
+}
+$("selMonth").addEventListener("change",()=>{ S.month=Number($("selMonth").value); mpSelected.clear(); save(); renderAll(); });
+$("selYear").addEventListener("change",()=>{ S.year=Number($("selYear").value)||S.year; mpSelected.clear(); save(); renderAll(); });
+$("viewSel").addEventListener("change",()=>{ S.view=$("viewSel").value; save(); renderCalendar(); });
+$("showCounts").addEventListener("change",()=>{ S.showCounts=$("showCounts").checked; save(); renderCalendar(); });
+$("printCoverage").addEventListener("change",()=>{ S.includeCoverageInPrint=$("printCoverage").checked; save(); renderCoverage(); });
+$("btnClear").addEventListener("click",()=>{
+  if(!confirm("Clear all shifts for this month?")) return;
+  const n=daysInMonth(S.year,S.month);
+  for(let d=1; d<=n; d++) delete S.shifts[ymd(S.year,S.month,d)];
+  save(); renderAll();
+});
+$("btnPrint").addEventListener("click",()=>window.print());
+// Fit the calendar to exactly one printed page, in both directions:
+// - too tall/wide: shrink with `zoom` (unlike transform:scale, zoom actually reflows layout, so the browser's
+//   own pagination sees the calendar at its true, shrunk size rather than its full-size box)
+// - shorter than a page: stretch the week rows to fill the leftover space instead of leaving it blank
+window.addEventListener("beforeprint",()=>{
+  const cw=$("calwrap")||document.querySelector(".calwrap");
+  const grid=$("calGrid");
+  if(!cw) return;
+  // reset any sizing left over from a previous print so the measurements below start from natural size
+  cw.style.zoom="1";
+  if(grid){ grid.style.height=""; grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex=""; }); }
+  const naturalH=cw.scrollHeight, naturalW=cw.scrollWidth;
+  const targetH=720, targetW=1030; // approx usable px for a landscape page at the @page margin set above
+  // shrink (never grow) just enough to bring the tighter dimension within the page - zoom reflows
+  // layout, so both axes scale together and stay in proportion
+  const fit=Math.min(1, targetH/naturalH, targetW/naturalW);
+  cw.style.zoom=Math.max(fit,0.55).toFixed(3); // don't shrink past readable - an unusually large roster may still spill to a 2nd page
+  // whichever axis WASN'T the tight one (usually height, since a calendar is much wider than it is
+  // tall) still has room left below the grid after that shrink - stretch the week rows to use it
+  // instead of leaving the bottom of the page blank. Zoom already reflowed, so these measurements
+  // and the height we set below are both real on-page px, comparable directly to targetH.
+  if(grid){
+    const cwTop=cw.getBoundingClientRect().top, gridTop=grid.getBoundingClientRect().top;
+    const usedAbove=gridTop-cwTop; // header + legend + weekday row
+    const rawLeftover=targetH-usedAbove-grid.scrollHeight;
+    // cap the stretch at a fraction of the grid's own natural height, so a big shrink elsewhere
+    // (e.g. a wide roster with only 2 shift types) can't balloon every row with empty space - any
+    // leftover past the cap is just left blank below the calendar instead
+    const leftover=Math.min(rawLeftover, grid.scrollHeight*0.45);
+    if(leftover>2){
+      grid.style.height=(grid.scrollHeight+leftover)+"px";
+      grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex="1"; });
+    }
+  }
+});
+window.addEventListener("afterprint",()=>{
+  const cw=$("calwrap")||document.querySelector(".calwrap");
+  const grid=$("calGrid");
+  if(cw) cw.style.zoom="";
+  if(grid){ grid.style.height=""; grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex=""; }); }
+});
+
+function renderCalendar(){
+  $("calTitle").textContent=`${MONTHS[S.month]} ${S.year}`;
+  $("showCounts").checked=S.showCounts;
+  const wd=$("weekdayRow"); wd.innerHTML=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="wd">${w}</div>`).join("");
+  const grid=$("calGrid"); grid.innerHTML="";
+  const firstWd=weekdayOf(S.year,S.month,1);
+  const n=daysInMonth(S.year,S.month);
+  let week=null;
+  const startWeek=()=>{ week=document.createElement("div"); week.className="calweek"; grid.appendChild(week); };
+  const addCell=(cell)=>{ if(!week||week.children.length>=7) startWeek(); week.appendChild(cell); };
+  for(let i=0;i<firstWd;i++){ const blank=document.createElement("div"); blank.className="day empty"; addCell(blank); }
+  for(let d=1; d<=n; d++){
+    const ds=ymd(S.year,S.month,d);
+    const weekend=isWeekend(S.year,S.month,d);
+    const cell=document.createElement("div"); cell.className="day"+(weekend?" weekend":"");
+    const dayShifts=S.shifts[ds]||{};
+    // coverage badges (built first so they can sit next to the day number, not float over the name chips)
+    const target=t=>weekend?t.weTarget:t.wdTarget;
+    const min=t=>weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
+    let badges=`<div class="badges${S.showCounts?"":" hideprint"}">`;
+    S.shiftTypes.forEach((t,i)=>{
+      const have=Object.values(dayShifts).filter(v=>v===t.id).length;
+      const low=have<min(t);
+      const [ink,bg]=CHIP_COLORS[i%3];
+      badges+=`<div class="badge-pill${low?" low":""}" style="--badge-ink:${ink};--badge-bg:${bg}">${t.name} ${have}/${target(t)}</div>`;
+    });
+    badges+="</div>";
+    let html=`<div class="daytop"><div class="daynum">${d}</div>${badges}</div><div class="chiplist">`;
+    S.shiftTypes.forEach((t,i)=>{
+      const people=Object.keys(dayShifts).filter(p=>dayShifts[p]===t.id && (S.view==="__all__"||S.view===p));
+      people.forEach(p=>{ html+=`<span class="chip" data-p="${p}" data-d="${ds}" style="background:${CHIP_COLORS[i%3][1]};color:${CHIP_COLORS[i%3][0]}">${p}</span>`; });
+    });
+    for(const p in S.leave){
+      if(S.view!=="__all__" && S.view!==p) continue;
+      if(isOnLeave(p,ds)) html+=`<span class="chip leave">${p} (leave)</span>`;
+    }
+    html+="</div>";
+    cell.innerHTML=html;
+    cell.querySelectorAll(".chip[data-p]").forEach(chip=>chip.addEventListener("click",()=>{
+      setPersonShift(chip.dataset.d,chip.dataset.p,null); save(); renderAll();
+    }));
+    addCell(cell);
+  }
+  // pad the final week out to 7 cells so its grid columns still line up
+  if(week){ while(week.children.length<7){ const blank=document.createElement("div"); blank.className="day empty"; week.appendChild(blank); } }
+}
+
+// ---------- validation & coverage ----------
+function longestRun(person){
+  const dates=Object.keys(S.shifts).filter(d=>S.shifts[d][person]).sort();
+  let best=0,cur=0,prev=null;
+  dates.forEach(ds=>{
+    if(prev && addDaysStr(prev,1)===ds) cur++; else cur=1;
+    best=Math.max(best,cur); prev=ds;
+  });
+  return best;
+}
+function renderWorkload(){
+  const table=$("workloadTable"); 
+  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${t.name}</th>`).join("")+`<th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
+  let body="";
+  S.staff.forEach(person=>{
+    const total=totalShiftsFor(person,null);
+    const quota=quotaFor(person);
+    const monthDates=Object.keys(S.shifts).filter(d=>{ const [yy,mm]=d.split("-").map(Number); return yy===S.year && mm-1===S.month; });
+    const counts=S.shiftTypes.map(t=>monthDates.filter(d=>S.shifts[d][person]===t.id).length);
+    const leaveN=(S.leave[person]||[]).filter(d=>{ const [yy,mm]=d.split("-").map(Number); return yy===S.year && mm-1===S.month; }).length;
+    const run=longestRun(person);
+    const problems=[];
+    if(total>quota) problems.push("over quota");
+    if(run>3) problems.push("run too long");
+    if(S.requireAll && S.shiftTypes.some((t,i)=>counts[i]===0 && total>0)) problems.push("missing a shift type");
+    // rest-rule / flip check
+    const dates=Object.keys(S.shifts).filter(d=>S.shifts[d][person]).sort();
+    for(let i=0;i<dates.length;i++){
+      const cur=S.shifts[dates[i]][person];
+      const nextD=addDaysStr(dates[i],1);
+      const nxt=S.shifts[nextD]&&S.shifts[nextD][person];
+      if(nxt && nxt!==cur){ problems.push("shift-type flip"); break; }
+    }
+    for(const pair of normalizedPairs()){
+      if(!pair.includes(person)) continue;
+      const partner=pair[0]===person?pair[1]:pair[0];
+      for(const ds in S.shifts){
+        const [yy,mm,dd]=ds.split("-").map(Number);
+        if(S.shifts[ds][person] && S.shifts[ds][person]===S.shifts[ds][partner]){
+          const t=shiftById(S.shifts[ds][person]);
+          if(isWeekend(yy,mm-1,dd)||t.ka){ problems.push("keep-apart clash"); break; }
+        }
+      }
+    }
+    const status=problems.length?[...new Set(problems)].join(", "):"OK";
+    body+=`<tr><td>${person}</td><td>${total}</td><td>${quota}</td>`+counts.map(c=>`<td>${c}</td>`).join("")+`<td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
+  });
+  table.innerHTML=head+body;
+}
+function renderCoverage(){
+  const n=daysInMonth(S.year,S.month);
+  const hasPlots=Array.from({length:n},(_,i)=>ymd(S.year,S.month,i+1)).some(ds=>S.shifts[ds] && Object.keys(S.shifts[ds]).length>0);
+  if(!hasPlots){
+    $("coverageCheck").innerHTML=`<div style="color:var(--muted)">Nothing plotted yet for ${MONTHS[S.month]} ${S.year} — run Auto Plot or add a shift manually, and any coverage issues will show up here.</div>`;
+    $("printCoverage").checked=S.includeCoverageInPrint;
+    $("coverageSection").className=S.includeCoverageInPrint?"":"hideprint";
+    return;
+  }
+  const gaps=[];
+  for(let d=1; d<=n; d++){
+    const ds=ymd(S.year,S.month,d); const weekend=isWeekend(S.year,S.month,d);
+    const dayShifts=S.shifts[ds]||{};
+    S.shiftTypes.forEach(t=>{
+      const have=Object.values(dayShifts).filter(v=>v===t.id).length;
+      const min=weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
+      if(have<min) gaps.push(`${ds}: ${t.name} has ${have}, needs at least ${min}`);
+    });
+  }
+  let html = gaps.length? `<div style="color:var(--bad)">${gaps.length} coverage gap(s):<br>`+gaps.join("<br>")+"</div>" : `<div style="color:var(--ok)">Every shift meets its minimum this month.</div>`;
+  normalizedPairs().forEach((pair,i)=>{
+    let shared=0, weekdayDayShared=0;
+    for(const ds in S.shifts){
+      const [yy,mm,dd]=ds.split("-").map(Number);
+      const a=S.shifts[ds][pair[0]], b=S.shifts[ds][pair[1]];
+      if(a && a===b){ const t=shiftById(a); if(isWeekend(yy,mm-1,dd)||t.ka) shared++; else weekdayDayShared++; }
+    }
+    html+=`<div style="margin-top:6px;">Pair ${i+1} (${pair[0]} / ${pair[1]}): ${shared} strict clash(es), ${weekdayDayShared} shared soft weekday shift(s).</div>`;
+  });
+  let singleWd=0;
+  for(let d=1; d<=n; d++){
+    if(isWeekend(S.year,S.month,d)) continue;
+    const ds=ymd(S.year,S.month,d); const dayShifts=S.shifts[ds]||{};
+    S.shiftTypes.filter(t=>t.flex).forEach(t=>{ if(Object.values(dayShifts).filter(v=>v===t.id).length===1) singleWd++; });
+  }
+  html+=`<div style="margin-top:6px;">${singleWd} weekday flexible-shift instance(s) running with a single person (allowed).</div>`;
+  $("coverageCheck").innerHTML=html;
+  $("printCoverage").checked=S.includeCoverageInPrint;
+  $("coverageSection").className=S.includeCoverageInPrint?"":"hideprint";
+}
+
+function renderAll(){
+  fillMonthYear(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCalendar(); renderWorkload(); renderCoverage();
+  $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
+  $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
+}
+["expShifts","restHrs"].forEach(id=>$(id).addEventListener("change",()=>{ S[id]=Number($(id).value); save(); renderAll(); }));
+$("rotation").addEventListener("change",()=>{ S.rotation=$("rotation").value; save(); });
+$("requireAll").addEventListener("change",()=>{ S.requireAll=$("requireAll").checked; save(); renderWorkload(); });
+$("weekendLeaveNoQuota").addEventListener("change",()=>{ S.weekendLeaveNoQuota=$("weekendLeaveNoQuota").checked; save(); renderAll(); });
+
+// ---------- export / import staff.json ----------
+$("btnExport").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({staff:S.staff},null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="staff.json"; a.click();
+});
+$("btnImport").addEventListener("click",()=>$("fileImport").click());
+$("fileImport").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!Array.isArray(data.staff)) throw new Error("bad format");
+      S.staff=[...new Set(data.staff.map(n=>String(n).trim()).filter(Boolean))].sort();
+      save(); renderAll(); setStatus(`Imported ${S.staff.length} staff from file.`);
+    }catch(err){ setStatus("Could not read that file: "+err.message); }
+  };
+  reader.readAsText(f);
+});
+
+// ---------- local server (Start PlanTHat.bat / PlanTHat.py) ----------
+const API="api/staff";
+S.serverMode=false;
+async function tryServerLoad(){
+  try{
+    const res=await fetch(API,{cache:"no-store"});
+    if(!res.ok) throw new Error("server responded "+res.status);
+    const data=await res.json();
+    if(!Array.isArray(data.staff)) throw new Error("staff.json is not in the expected {\"staff\":[...]} form");
+    S.staff=[...new Set(data.staff.map(n=>String(n).trim()).filter(Boolean))].sort();
+    S.serverMode=true;
+    save(); renderAll();
+    setStatus(`Loaded ${S.staff.length} staff from staff.json (local server).`);
+  }catch(e){
+    S.serverMode=false;
+    setStatus("No local server found — running in browser-only mode. Use Save/Reload, or Export/Import, to move staff.json by hand.");
+  }
+  $("btnSave").textContent=S.serverMode?"Save":"Save (download)";
+}
+$("btnSave").addEventListener("click",async()=>{
+  if(S.serverMode){
+    try{
+      const res=await fetch(API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({staff:S.staff})});
+      if(!res.ok) throw new Error("server responded "+res.status);
+      setStatus(`Saved ${S.staff.length} staff to staff.json.`);
+    }catch(e){ setStatus("Could not save to the local server: "+e.message); }
+  } else {
+    $("btnExport").click();
+  }
+});
+$("btnReload").addEventListener("click",async()=>{
+  if(S.serverMode){ setStatus("Reloading…"); await tryServerLoad(); }
+  else { $("btnImport").click(); }
+});
+
+// ---------- Auto Plot ----------
+function autoPlot(){
+  const n=daysInMonth(S.year,S.month);
+  const dates=[]; for(let d=1; d<=n; d++) dates.push(ymd(S.year,S.month,d));
+  const patterns = S.rotation==="auto" ? ["3","2","mix"] : [S.rotation];
+  const attemptsPer = S.rotation==="auto" ? 12 : 40;
+  let best=null;
+
+  function tryPattern(pattern,attempts){
+    let localBest=null;
+    for(let a=0;a<attempts;a++){
+      const plan=buildOnePlan(dates,pattern);
+      const score=scorePlan(plan,dates);
+      if(!localBest||score<localBest.score) localBest={plan,score};
+    }
+    return localBest;
+  }
+  patterns.forEach(p=>{ const r=tryPattern(p,attemptsPer); if(!best||r.score<best.score) best={...r,pattern:p}; });
+  // refine winning pattern with more attempts
+  const refined=tryPattern(best.pattern,S.rotation==="auto"?40:20);
+  if(refined.score<best.score) best={...refined,pattern:best.pattern};
+
+  // commit best plan for this month only
+  dates.forEach(ds=>{ delete S.shifts[ds]; });
+  for(const ds in best.plan) S.shifts[ds]=best.plan[ds];
+  save();
+  const gapCount=(best.score>=1000000)?Math.floor(best.score/1000000):0;
+  const pairsUsed=normalizedPairs();
+  const pairsNote=pairsUsed.length? ` Keeping ${pairsUsed.map(p=>`${p[0]} & ${p[1]}`).join(" and ")} apart.` : "";
+  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${pairsNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
+  renderAll();
+}
+function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return Math.random()<0.5?2:3; }
+
+// carry a person's run/rest state over from whatever was actually committed at the end of the previous month,
+// so a block that finished on the last day of last month still forces the right amount of rest into this one
+// (ported from the legacy planner's initState)
+function seedCarryover(dates,pattern){
+  const carry={};
+  const dayBefore=addDaysStr(dates[0],-1);
+  S.staff.forEach(p=>{
+    const lastType=personShift(dayBefore,p);
+    const bl=blockLenFor(pattern);
+    if(lastType){
+      let run=1;
+      for(let k=1;k<7;k++){ if(personShift(addDaysStr(dayBefore,-k),p)===lastType) run++; else break; }
+      if(run>=bl) carry[p]={type:null,daysLeft:0,blockLen:bl,offLeft:bl,lastEnd:null};
+      else carry[p]={type:lastType,daysLeft:bl-run,blockLen:bl,offLeft:0,lastEnd:dayBefore};
+    } else {
+      let rest=0;
+      for(let k=0;k<7;k++){ if(!personShift(addDaysStr(dayBefore,-k),p)) rest++; else break; }
+      carry[p]={type:null,daysLeft:0,blockLen:bl,offLeft:Math.max(0,bl-rest),lastEnd:null};
+    }
+  });
+  return carry;
+}
+
+function buildOnePlan(dates,pattern){
+  const plan={}; // dateStr -> {person:typeId}
+  const runInfo=seedCarryover(dates,pattern); // person -> {type, daysLeft, blockLen, offLeft}
+  const used={}; S.staff.forEach(p=>used[p]=0);
+  const typeUsed={}; S.staff.forEach(p=>{ typeUsed[p]={}; S.shiftTypes.forEach(t=>typeUsed[p][t.id]=0); }); // per-person Day/Night (etc) split, kept alongside `used` so new picks can favor whichever type someone has less of
+  const quotas={}; S.staff.forEach(p=>quotas[p]=quotaFor(p));
+
+  function place(ds,person,typeId){ if(!plan[ds])plan[ds]={}; plan[ds][person]=typeId; used[person]++; typeUsed[person][typeId]=(typeUsed[person][typeId]||0)+1; }
+  function isFree(ds,person){ return !isOnLeave(person,ds) && !(plan[ds]&&plan[ds][person]); }
+  function keepApartOK(ds,person,typeId,weekend){
+    const type=shiftById(typeId);
+    for(const pair of normalizedPairs()){
+      if(!pair.includes(person)) continue;
+      const partner=pair[0]===person?pair[1]:pair[0];
+      const pt=plan[ds]&&plan[ds][partner];
+      if(pt===typeId && (weekend||type.ka)) return false;
+    }
+    return true;
+  }
+
+  // Phase 1: minimum cover, strict shift types before flexible ones
+  const order=[...S.shiftTypes].sort((a,b)=>(a.flex===b.flex)?0:(a.flex?1:-1));
+  dates.forEach(ds=>{
+    const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
+    const restStartedToday=new Set(); // people whose off-period begins today shouldn't have it decremented today too
+    order.forEach(t=>{
+      const min=weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
+      let have=Object.values(plan[ds]||{}).filter(v=>v===t.id).length;
+      // continue running blocks first
+      S.staff.forEach(p=>{
+        if(have>=min) return;
+        const ri=runInfo[p];
+        if(ri.type===t.id && ri.daysLeft>0 && isFree(ds,p) && used[p]<quotas[p] && keepApartOK(ds,p,t.id,weekend)){
+          place(ds,p,t.id); ri.daysLeft--; have++;
+          if(ri.daysLeft===0){ ri.offLeft=ri.blockLen; ri.type=null; restStartedToday.add(p); } // block finished -> start the matching "off" rest
+        }
+      });
+      while(have<min){
+        const candidates=S.staff.filter(p=>{
+          if(!isFree(ds,p)||used[p]>=quotas[p]) return false;
+          if(!keepApartOK(ds,p,t.id,weekend)) return false;
+          const ri=runInfo[p];
+          if(ri.offLeft>0) return false; // still resting per the rotation pattern
+          if(ri.type && ri.type!==t.id && ri.daysLeft>0) return false; // mid-block of another type
+          return true;
+        });
+        if(!candidates.length) break;
+        candidates.sort((a,b)=>{
+          // spare quota still drives who goes first; a small nudge toward whoever has fewer of THIS
+          // shift type so far keeps each person's own Day/Night split from drifting too lopsided
+          const sa=(quotas[a]-used[a])+Math.random()*0.5-(typeUsed[a][t.id]||0)*0.15;
+          const sb=(quotas[b]-used[b])+Math.random()*0.5-(typeUsed[b][t.id]||0)*0.15;
+          return sb-sa;
+        });
+        const p=candidates[0];
+        const bl=blockLenFor(pattern);
+        place(ds,p,t.id); runInfo[p]={type:t.id,daysLeft:bl-1,blockLen:bl,offLeft:0,lastEnd:ds};
+        have++;
+      }
+    });
+    // one calendar day has now passed for everyone: count it against any pending rest period (except one that only just began today)
+    S.staff.forEach(p=>{ if(runInfo[p].offLeft>0 && !restStartedToday.has(p)) runInfo[p].offLeft--; });
+  });
+
+  // Phase 2: top up spare quota in blocks, minimum-level then target-level.
+  // For each candidate slot, prefer one with a FULL rest gap either side (tier 1); only fall back to
+  // a minimal 1-day gap (tier 2) if no fully-rested slot exists anywhere this month.
+  function windowFits(p,idx,bl,gapLen){
+    for(let k=1;k<=gapLen;k++){ const d=dates[idx-k]; if(d && plan[d] && plan[d][p]) return false; }
+    for(let k=0;k<gapLen;k++){ const d=dates[idx+bl+k]; if(d && plan[d] && plan[d][p]) return false; }
+    return true;
+  }
+  ["min","target"].forEach(level=>{
+    let progress=true;
+    while(progress){
+      progress=false;
+      const spareOrder=[...S.staff].sort((a,b)=>(quotas[b]-used[b])-(quotas[a]-used[a]));
+      for(const p of spareOrder){
+        if(used[p]>=quotas[p]) continue;
+        let placedForPerson=false;
+        // try whichever shift type this person has fewest of so far first, so topping-up someone's
+        // total quota doesn't also skew their personal Day/Night split
+        const typesByNeed=[...S.shiftTypes].sort((a,b)=>(typeUsed[p][a.id]||0)-(typeUsed[p][b.id]||0));
+        for(const t of typesByNeed){
+          const idealBl=blockLenFor(pattern);
+          const remaining=quotas[p]-used[p];
+          // try a full rotation-length block first; if that can't fit (or the remainder is smaller than
+          // one block), fall back to progressively shorter runs so a leftover day or two - which never
+          // divides evenly into blocks of 2 or 3 - still gets placed instead of stranding someone under quota
+          for(let bl=Math.min(idealBl,remaining); bl>=1 && !placedForPerson; bl--){
+            for(const gapLen of [bl,1]){
+              const validStarts=[];
+              for(let idx=0; idx+bl<=dates.length; idx++){
+                if(!windowFits(p,idx,bl,gapLen)) continue;
+                let ok=true; const span=[];
+                for(let i=0;i<bl;i++){
+                  const ds=dates[idx+i]; const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
+                  const min=weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
+                  const target=weekend?t.weTarget:t.wdTarget;
+                  const cap=level==="min"?min:target;
+                  const have=Object.values(plan[ds]||{}).filter(v=>v===t.id).length;
+                  if(have>=cap || !isFree(ds,p) || !keepApartOK(ds,p,t.id,weekend)) { ok=false; break; }
+                  span.push(ds);
+                }
+                if(ok) validStarts.push(span);
+              }
+              if(validStarts.length){
+                const span=validStarts[Math.floor(Math.random()*validStarts.length)];
+                span.forEach(ds=>place(ds,p,t.id));
+                progress=true; placedForPerson=true;
+                break;
+              }
+            }
+          }
+          if(placedForPerson) break;
+        }
+      }
+    }
+  });
+
+  // Phase 3: even things out. Move a single flexible-shift day from whoever's most over their fair share
+  // to whoever has the most room, but only at the edge of a block or a lone day - never cutting a block in half.
+  function isBlockEdgeOrLone(person,ds,typeId){
+    const prevD=addDaysStr(ds,-1), nextD=addDaysStr(ds,1);
+    const prevSame=plan[prevD]&&plan[prevD][person]===typeId;
+    const nextSame=plan[nextD]&&plan[nextD][person]===typeId;
+    return !(prevSame&&nextSame);
+  }
+  {
+    let guard=0, moved=true;
+    while(moved && guard++<300){
+      moved=false;
+      const over=[...S.staff].sort((a,b)=>(used[b]-quotas[b])-(used[a]-quotas[a]))[0];
+      const under=[...S.staff].sort((a,b)=>(quotas[a]-used[a])-(quotas[b]-used[b]))[0];
+      if(!over||!under||over===under) break;
+      if(used[over]-quotas[over]<2 || quotas[under]-used[under]<1) break;
+      let done=false;
+      for(const ds of dates){
+        const typeId=plan[ds] && plan[ds][over];
+        if(!typeId) continue;
+        const t=shiftById(typeId);
+        if(!t.flex) continue; // leave strict-coverage shifts alone
+        if(!isBlockEdgeOrLone(over,ds,typeId)) continue;
+        if(!isFree(ds,under)) continue;
+        const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
+        if(!keepApartOK(ds,under,typeId,weekend)) continue;
+        const prevD=addDaysStr(ds,-1), nextD=addDaysStr(ds,1);
+        const prevType=(plan[prevD]&&plan[prevD][under])||personShift(prevD,under);
+        const nextType=(plan[nextD]&&plan[nextD][under])||personShift(nextD,under);
+        if(prevType && prevType!==typeId) continue;
+        if(nextType && nextType!==typeId) continue;
+        let run=1;
+        for(let k=1;k<4;k++){ const dd=addDaysStr(ds,-k); if((plan[dd]&&plan[dd][under])===typeId) run++; else break; }
+        for(let k=1;k<4;k++){ const dd=addDaysStr(ds,k); if((plan[dd]&&plan[dd][under])===typeId) run++; else break; }
+        if(run>3) continue;
+        delete plan[ds][over]; used[over]--; typeUsed[over][typeId]--;
+        if(!plan[ds]) plan[ds]={};
+        plan[ds][under]=typeId; used[under]++; typeUsed[under][typeId]=(typeUsed[under][typeId]||0)+1;
+        done=true; moved=true;
+        break;
+      }
+      if(!done) break;
+    }
+  }
+  return plan;
+}
+
+function scorePlan(plan,dates){
+  let score=0;
+  dates.forEach(ds=>{
+    const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
+    S.shiftTypes.forEach(t=>{
+      const have=Object.values(plan[ds]||{}).filter(v=>v===t.id).length;
+      const min=weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
+      const target=weekend?t.weTarget:t.wdTarget;
+      if(have<min) score+=1000000;
+      else if(have<target) score+=300;
+      if(have>target) score+=100;
+    });
+  });
+  normalizedPairs().forEach(pair=>{
+    dates.forEach(ds=>{
+      const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
+      const a=plan[ds]&&plan[ds][pair[0]], b=plan[ds]&&plan[ds][pair[1]];
+      if(a && a===b){ const t=shiftById(a); if(weekend||t.ka) score+=1000000; else score+=3000; }
+    });
+  });
+  // penalize runs longer than the validation table's cap (3), and any shift-type flip between consecutive worked days
+  S.staff.forEach(p=>{
+    let run=0, prevType=null;
+    dates.forEach(ds=>{
+      const cur=(plan[ds]&&plan[ds][p])||null;
+      if(cur){
+        run=prevType?run+1:1;
+        if(prevType && cur!==prevType) score+=2000;
+        if(run>3) score+=4000;
+      } else run=0;
+      prevType=cur;
+    });
+  });
+  const used={}; S.staff.forEach(p=>used[p]=0);
+  dates.forEach(ds=>{ for(const p in (plan[ds]||{})) used[p]++; });
+  if(S.requireAll){
+    S.staff.forEach(p=>{
+      const types=new Set(); dates.forEach(ds=>{ if(plan[ds]&&plan[ds][p]) types.add(plan[ds][p]); });
+      if(used[p]>0 && types.size<S.shiftTypes.length) score+=100000;
+    });
+  }
+  const quotas=S.staff.map(p=>quotaFor(p)-used[p]);
+  if(quotas.length){
+    const max=Math.max(...quotas), min=Math.min(...quotas);
+    const mean=quotas.reduce((a,b)=>a+b,0)/quotas.length;
+    const variance=quotas.reduce((a,b)=>a+(b-mean)**2,0)/quotas.length;
+    score+=(max-min)*220+variance*30; // weighted up so the optimizer favors an even spread more strongly
+  }
+  // also favor an even split of shift TYPES per person (e.g. not 10 Day/3 Night for one person and the
+  // reverse for another) - secondary to total-quota fairness above, so it acts as a tie-breaker
+  if(S.shiftTypes.length>1){
+    S.staff.forEach(p=>{
+      const counts=S.shiftTypes.map(t=>0);
+      dates.forEach(ds=>{
+        const v=plan[ds]&&plan[ds][p];
+        if(!v) return;
+        const idx=S.shiftTypes.findIndex(t=>t.id===v);
+        if(idx>=0) counts[idx]++;
+      });
+      if(!used[p]) return;
+      score+=(Math.max(...counts)-Math.min(...counts))*40;
+    });
+  }
+  return Math.round(score);
+}
+$("btnAuto").addEventListener("click",()=>{
+  if(!S.staff.length){ setStatus("Add staff first."); return; }
+  setStatus("Planning…");
+  setTimeout(autoPlot,10);
+});
+
+renderAll();
+tryServerLoad();
+})();
+</script>
+</body>
+</html>
