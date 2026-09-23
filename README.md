@@ -1,6 +1,6 @@
 # Schedule Master
 
-Schedule Master is a single-file HTML/JavaScript app for building and validating a monthly staff shift roster. It runs entirely in the browser — no build step, no backend required — and optionally talks to a small local server for shared `staff.json` storage.
+Schedule Master is a single-file HTML/JavaScript app for building and validating a monthly staff shift roster. It runs entirely in the browser — no build step, no backend required — and optionally talks to a small local server for shared `staff.json` and `records.json` storage.
 
 Open `ScheduleMaster.html` directly in a browser (double-click it, or `xdg-open ScheduleMaster.html` / `firefox ScheduleMaster.html` from a terminal — it is a web page, not an executable script).
 
@@ -13,6 +13,7 @@ Open `ScheduleMaster.html` directly in a browser (double-click it, or `xdg-open 
 - Supports **Manual Plot** for one person across one or more days at a time, picked from a small click-to-select calendar, with the same rules enforced live.
 - Shows a live **calendar**, a **workload & validation** table, and a **coverage check** panel.
 - **Prints** a clean roster (and optionally the coverage check) to PDF/paper.
+- Lets you **save a labeled snapshot** of the current month — staff, shift types, keep-apart pairs, leave, that month's shifts, and settings — as a standalone record you can look back on or delete later, kept separate from the live data (see §8).
 - Persists everything to the browser's `localStorage`; staff can also be exported/imported as `staff.json`, or synced with a tiny local server if one is running.
 
 ---
@@ -185,3 +186,14 @@ flowchart TD
 ## 7. Printing
 
 Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. A separate, more saturated color palette is swapped in for print so shift colors don't wash out on paper.
+
+---
+
+## 8. Saved records
+
+The **Saved records** panel lets you keep a permanent, labeled history of past rosters — entirely separate from the live `S` state everything else in the app reads and writes. Saving, viewing, and deleting a record never changes what's currently plotted, and plotting or editing the live roster never changes a saved record.
+
+- **Save**: typing a label (optional — it defaults to "Month Year") and clicking "Save current month as a record" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list.
+- **View**: each record shows a one-line summary (staff/shift-type/placed-shift counts) plus a "View" button that expands the complete saved snapshot as raw JSON, so you can always refer back to exactly what was saved.
+- **Delete**: each record has its own "Delete" button (with a confirmation prompt); deleting one only removes that record.
+- **Storage**: records live in their own file, `records.json`, kept apart from `staff.json`. In server mode they're read from and written to it directly (`GET`/`PUT api/records`); in browser-only mode they're kept in `localStorage` under `planthat_records`, with "Export records.json" / "Import records.json" buttons to move them to/from a file by hand, mirroring how staff are exported/imported.

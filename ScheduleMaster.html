@@ -89,9 +89,14 @@ table.workload td.ok{color:var(--ok);}
 .mpday.selected{outline:2px solid var(--accent);outline-offset:-1px;background:color-mix(in srgb, var(--accent) 16%, var(--panel));}
 .mpdaynum{font-size:10.5px;color:var(--muted);font-weight:600;}
 .mptag{font-size:8.5px;font-weight:600;border-radius:4px;padding:0 4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.record-card{border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+.record-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.record-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.record-summary{margin-top:4px;}
+.record-json{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;max-height:260px;overflow:auto;font-size:11px;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -234,6 +239,21 @@ table.workload td.ok{color:var(--ok);}
       <div id="coverageCheck" class="small"></div>
     </div>
   </div>
+
+  <div class="panel" style="margin-top:14px;" id="recordsPanel">
+    <h2>6 · Saved records</h2>
+    <div class="row">
+      <input type="text" id="recordLabel" placeholder="Label for this record (optional)" style="flex:1">
+      <button id="recordSave" class="primary">Save current month as a record</button>
+    </div>
+    <div class="hint">Saves a full snapshot — staff, shift types, keep-apart pairs, leave, this month's shifts, and settings — to <code>records.json</code>, kept separate from your live data. Deleting a record only removes the record; it never touches what's currently plotted.</div>
+    <div class="row" style="margin-top:2px;">
+      <button id="recordsExport">Export records.json</button>
+      <button id="recordsImport">Import records.json</button>
+      <input type="file" id="recordsFileImport" accept="application/json" style="display:none">
+    </div>
+    <div id="recordsList" style="display:flex;flex-direction:column;gap:8px;margin-top:10px;"></div>
+  </div>
 </div>
 </div>
 
@@ -260,13 +280,17 @@ function defaultState(){
 }
 let S=load();
 function load(){
-  try{ const raw=localStorage.getItem("planthat_state"); if(raw) return Object.assign(defaultState(), JSON.parse(raw)); }catch(e){}
+  try{
+    let raw=localStorage.getItem("schedulemaster_state");
+    if(!raw){ raw=localStorage.getItem("planthat_state"); } // one-time migration from the old key name
+    if(raw) return Object.assign(defaultState(), JSON.parse(raw));
+  }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem("planthat_state", JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} }
 $("btnResetAll").addEventListener("click",()=>{
   if(!confirm("This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. staff.json on disk is untouched. This can't be undone. Continue?")) return;
-  try{ localStorage.removeItem("planthat_state"); }catch(e){}
+  try{ localStorage.removeItem("schedulemaster_state"); localStorage.removeItem("planthat_state"); }catch(e){}
   location.reload();
 });
 
@@ -884,7 +908,7 @@ $("fileImport").addEventListener("change",e=>{
   reader.readAsText(f);
 });
 
-// ---------- local server (Start PlanTHat.bat / PlanTHat.py) ----------
+// ---------- local server (Start ScheduleMaster.bat / ScheduleMaster.py) ----------
 const API="api/staff";
 S.serverMode=false;
 async function tryServerLoad(){
@@ -917,6 +941,177 @@ $("btnSave").addEventListener("click",async()=>{
 $("btnReload").addEventListener("click",async()=>{
   if(S.serverMode){ setStatus("Reloading…"); await tryServerLoad(); }
   else { $("btnImport").click(); }
+});
+
+// ---------- saved records (kept separate from the live state, in records.json) ----------
+let RECORDS=[];
+const RECORDS_API="api/records";
+let recordsServerMode=false;
+
+function loadRecordsLocal(){
+  try{
+    let raw=localStorage.getItem("schedulemaster_records");
+    if(!raw){ raw=localStorage.getItem("planthat_records"); } // one-time migration from the old key name
+    if(raw){ const v=JSON.parse(raw); if(Array.isArray(v)) return v; }
+  }catch(e){}
+  return [];
+}
+function saveRecordsLocal(){ try{ localStorage.setItem("schedulemaster_records", JSON.stringify(RECORDS)); }catch(e){} }
+
+async function tryServerLoadRecords(){
+  try{
+    const res=await fetch(RECORDS_API,{cache:"no-store"});
+    if(!res.ok) throw new Error("server responded "+res.status);
+    const data=await res.json();
+    if(!Array.isArray(data.records)) throw new Error("records.json is not in the expected {\"records\":[...]} form");
+    RECORDS=data.records;
+    recordsServerMode=true;
+  }catch(e){
+    recordsServerMode=false;
+    RECORDS=loadRecordsLocal();
+  }
+  renderRecords();
+}
+async function persistRecords(){
+  if(recordsServerMode){
+    try{
+      const res=await fetch(RECORDS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({records:RECORDS})});
+      if(!res.ok) throw new Error("server responded "+res.status);
+    }catch(e){ setStatus("Could not save records to the local server: "+e.message); }
+  } else {
+    saveRecordsLocal();
+  }
+}
+
+function snapshotNow(label){
+  // only this month's shifts go into the snapshot — staff/shiftTypes/leave/settings are saved as they stand right now
+  const monthShifts={};
+  for(const d in S.shifts){
+    const [yy,mm]=d.split("-").map(Number);
+    if(yy===S.year && mm-1===S.month) monthShifts[d]=S.shifts[d];
+  }
+  return {
+    id: Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+    label: (label||"").trim() || `${MONTHS[S.month]} ${S.year}`,
+    savedAt: new Date().toISOString(),
+    year: S.year, month: S.month,
+    data: JSON.parse(JSON.stringify({
+      staff:S.staff, shiftTypes:S.shiftTypes, keepApart:S.keepApart, leave:S.leave, shifts:monthShifts,
+      expShifts:S.expShifts, restHrs:S.restHrs, rotation:S.rotation,
+      requireAll:S.requireAll, weekendLeaveNoQuota:S.weekendLeaveNoQuota
+    }))
+  };
+}
+function recordSummary(rec){
+  const d=rec.data;
+  let placed=0; for(const day in d.shifts) placed+=Object.keys(d.shifts[day]).length;
+  const days=Object.keys(d.shifts).length;
+  return `${d.staff.length} staff · ${d.shiftTypes.length} shift type${d.shiftTypes.length===1?"":"s"} · ${placed} shift${placed===1?"":"s"} placed over ${days} day${days===1?"":"s"}`;
+}
+function renderRecords(){
+  const host=$("recordsList"); host.innerHTML="";
+  if(!RECORDS.length){ host.innerHTML=`<div class="small">No saved records yet.</div>`; return; }
+  [...RECORDS].sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).forEach(rec=>{
+    const card=document.createElement("div"); card.className="record-card";
+    const when=new Date(rec.savedAt).toLocaleString();
+    card.innerHTML=`
+      <div class="record-head">
+        <strong>${rec.label}</strong>
+        <div class="row" style="margin:0;gap:4px;">
+          <button data-act="plot" data-id="${rec.id}" title="Load this record onto the live calendar">Plot</button>
+          <button data-act="view" data-id="${rec.id}">View</button>
+          <button data-act="overwrite" data-id="${rec.id}" title="Replace this record with the current month's live data">Overwrite</button>
+          <button data-act="delete" data-id="${rec.id}" title="Delete this record">Delete</button>
+        </div>
+      </div>
+      <div class="record-meta">${MONTHS[rec.month]} ${rec.year} · saved ${when}</div>
+      <div class="record-summary small">${recordSummary(rec)}</div>
+      <pre class="record-json" data-id="${rec.id}" style="display:none;"></pre>`;
+    host.appendChild(card);
+  });
+  host.querySelectorAll('button[data-act="plot"]').forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
+      if(!confirm(`Load "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) onto the live calendar?\n\nThis replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (this record itself is untouched either way).`)) return;
+      plotRecord(rec);
+    });
+  });
+  host.querySelectorAll('button[data-act="overwrite"]').forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
+      if(!confirm(`Overwrite the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) with what's currently live (${MONTHS[S.month]} ${S.year})? This replaces its saved staff, shift types, keep-apart pairs, leave, shifts and settings — the old snapshot can't be recovered.`)) return;
+      const fresh=snapshotNow(rec.label);
+      rec.label=fresh.label; rec.savedAt=fresh.savedAt; rec.year=fresh.year; rec.month=fresh.month; rec.data=fresh.data;
+      await persistRecords();
+      renderRecords();
+      setStatus(`Overwrote record "${rec.label}" (${recordSummary(rec)}).`);
+    });
+  });
+  host.querySelectorAll('button[data-act="delete"]').forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
+      if(!confirm(`Delete the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year})? This can't be undone.`)) return;
+      RECORDS=RECORDS.filter(r=>r.id!==rec.id);
+      await persistRecords();
+      renderRecords();
+      setStatus(`Deleted record "${rec.label}".`);
+    });
+  });
+  host.querySelectorAll('button[data-act="view"]').forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const pre=host.querySelector(`pre.record-json[data-id="${btn.dataset.id}"]`);
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id);
+      const opening=pre.style.display==="none";
+      pre.style.display=opening?"block":"none";
+      pre.textContent=opening?JSON.stringify(rec.data,null,2):"";
+      btn.textContent=opening?"Hide":"View";
+    });
+  });
+}
+function plotRecord(rec){
+  const d=rec.data;
+  // Replace live staff/shiftTypes/keepApart/leave/settings with the record's snapshot,
+  // and merge (overwrite) that month's shifts into the live shifts object — other months
+  // already plotted in S.shifts are left alone.
+  S.staff=JSON.parse(JSON.stringify(d.staff));
+  S.shiftTypes=JSON.parse(JSON.stringify(d.shiftTypes));
+  S.keepApart=JSON.parse(JSON.stringify(d.keepApart));
+  S.leave=JSON.parse(JSON.stringify(d.leave));
+  S.expShifts=d.expShifts; S.restHrs=d.restHrs; S.rotation=d.rotation;
+  S.requireAll=d.requireAll; S.weekendLeaveNoQuota=d.weekendLeaveNoQuota;
+  for(const ds in d.shifts) S.shifts[ds]=JSON.parse(JSON.stringify(d.shifts[ds]));
+  S.year=rec.year; S.month=rec.month;
+  save();
+  renderAll();
+  setStatus(`Plotted record "${rec.label}" onto ${MONTHS[rec.month]} ${rec.year}.`);
+}
+$("recordSave").addEventListener("click", async ()=>{
+  const rec=snapshotNow($("recordLabel").value);
+  RECORDS.push(rec);
+  await persistRecords();
+  $("recordLabel").value="";
+  renderRecords();
+  setStatus(`Saved record "${rec.label}" (${recordSummary(rec)}).`);
+});
+$("recordsExport").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({records:RECORDS},null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="records.json"; a.click();
+});
+$("recordsImport").addEventListener("click",()=>$("recordsFileImport").click());
+$("recordsFileImport").addEventListener("change", e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=async ()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!Array.isArray(data.records)) throw new Error("bad format");
+      RECORDS=data.records;
+      await persistRecords();
+      renderRecords();
+      setStatus(`Imported ${RECORDS.length} record(s) from file.`);
+    }catch(err){ setStatus("Could not read that file: "+err.message); }
+  };
+  reader.readAsText(f);
 });
 
 // ---------- Auto Plot ----------
@@ -1216,6 +1411,7 @@ $("btnAuto").addEventListener("click",()=>{
 
 renderAll();
 tryServerLoad();
+tryServerLoadRecords();
 })();
 </script>
 </body>

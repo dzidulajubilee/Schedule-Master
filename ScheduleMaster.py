@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-PlanTHat local server.
-Serves PlanTHat.html and its companion files from this folder, and exposes:
-  GET  /api/staff  -> reads staff.json ({"staff": [...]})
-  PUT  /api/staff  -> writes staff.json (body: {"staff": [...]})
+Schedule Master local server.
+Serves ScheduleMaster.html and its companion files from this folder, and exposes:
+  GET  /api/staff    -> reads staff.json ({"staff": [...]})
+  PUT  /api/staff    -> writes staff.json (body: {"staff": [...]})
+  GET  /api/records  -> reads records.json ({"records": [...]})
+  PUT  /api/records  -> writes records.json (body: {"records": [...]}) -- full replace,
+                        same pattern as /api/staff; the client sends the whole array back
+                        each time (e.g. after adding or deleting one record).
 
 No third-party packages required (standard library only).
-Run this file (or double-click Start PlanTHat.bat), then a browser tab opens
-automatically at PlanTHat.html.
+Run this file (or double-click Start ScheduleMaster.bat), then a browser tab opens
+automatically at ScheduleMaster.html.
 """
 import http.server
 import json
@@ -19,6 +23,7 @@ import webbrowser
 
 FOLDER = os.path.dirname(os.path.abspath(__file__))
 STAFF_FILE = os.path.join(FOLDER, "staff.json")
+RECORDS_FILE = os.path.join(FOLDER, "records.json")
 HTML_FILE = "ScheduleMaster.html"
 PORT = 8743
 
@@ -54,6 +59,31 @@ def write_staff(data):
     return {"staff": sorted(names)}
 
 
+def read_records():
+    if not os.path.exists(RECORDS_FILE):
+        return {"records": []}
+    with open(RECORDS_FILE, "r", encoding="utf-8") as f:
+        raw = f.read().strip()
+    if not raw:
+        return {"records": []}
+    data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it, file is left untouched
+    if not isinstance(data, dict) or not isinstance(data.get("records"), list):
+        raise ValueError('records.json must look like {"records": [...]}')
+    return data
+
+
+def write_records(data):
+    if not isinstance(data, dict) or not isinstance(data.get("records"), list):
+        raise ValueError('Expected {"records": [...]}')
+    # full replace, same as staff: the client already merged its add/delete into the array
+    # it sends. Atomic write: temp file then replace, so a crash mid-write can't corrupt records.json
+    tmp = RECORDS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"records": data["records"]}, f, indent=2)
+    os.replace(tmp, RECORDS_FILE)
+    return {"records": data["records"]}
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=FOLDER, **kwargs)
@@ -63,7 +93,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         # This file changes often during development. Without this, browsers may keep serving a stale
-        # cached copy of PlanTHat.html after it's been updated on disk, until the tab is hard-refreshed.
+        # cached copy of ScheduleMaster.html after it's been updated on disk, until the tab is hard-refreshed.
         self.send_header("Cache-Control", "no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         super().end_headers()
@@ -77,7 +107,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.rstrip("/") == "/api/staff":
+        path = self.path.rstrip("/")
+        if path == "/api/staff":
             try:
                 self._send_json(200, read_staff())
             except ValueError as e:
@@ -85,15 +116,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
             return
+        if path == "/api/records":
+            try:
+                self._send_json(200, read_records())
+            except ValueError as e:
+                self._send_json(400, {"error": f"records.json is unreadable: {e}. It was not changed."})
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+            return
         super().do_GET()
 
     def do_PUT(self):
-        if self.path.rstrip("/") == "/api/staff":
+        path = self.path.rstrip("/")
+        if path == "/api/staff":
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length) if length else b"{}"
                 data = json.loads(body.decode("utf-8"))
                 result = write_staff(data)
+                self._send_json(200, result)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+            return
+        if path == "/api/records":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length) if length else b"{}"
+                data = json.loads(body.decode("utf-8"))
+                result = write_records(data)
                 self._send_json(200, result)
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
@@ -123,7 +175,7 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping PlanTHat server.")
+        print("\nStopping Schedule Master server.")
         server.shutdown()
 
 
