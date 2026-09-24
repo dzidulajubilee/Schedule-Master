@@ -9,7 +9,7 @@
   --bg:#f6f5f2; --panel:#ffffff; --border:#dedad2; --text:#221f1a; --muted:#726d63;
   --accent:#0f6b5c; --accent-ink:#ffffff;
   --leave:#c94a3f; --leave-bg:#fbe6e3;
-  --warn:#b3771b; --bad:#c94a3f; --ok:#1d7a4c;
+  --warn:#b3771b; --warn-bg:#fbead2; --bad:#c94a3f; --ok:#1d7a4c; --ok-bg:#dcf5e2;
   --chip-1:#2e6fec; --chip-1-bg:#e6edfd;
   --chip-2:#c9781a; --chip-2-bg:#fbeadb;
   --chip-3:#6a52d6; --chip-3-bg:#ece8fb;
@@ -19,12 +19,12 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
-    --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340;
+    --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
   }
 }
 :root[data-theme="dark"]{
   --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
-  --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340;
+  --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
 }
 /* ---- selectable calendar color schemes (§ palette swatches near the calendar) ----
    each scheme restates ink+bg for light mode, then just the (darker) bg for dark mode,
@@ -151,9 +151,10 @@ th{background:var(--bg);font-weight:600;}
 .daynum{font-size:11px;color:var(--muted);font-weight:600;}
 .chip{display:block;font-size:10.5px;border-radius:5px;padding:1px 5px;margin-top:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chip.leave{background:var(--leave-bg);color:var(--leave);font-weight:600;}
-.badges{display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:62%;flex:0 0 auto;}
+.badges{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start;gap:2px;max-width:62%;flex:0 0 auto;}
 .badge-pill{background:var(--badge-bg);color:var(--badge-ink);font-size:9px;font-weight:600;font-variant-numeric:tabular-nums;border-radius:5px;padding:1px 6px;white-space:nowrap;line-height:1.5;}
 .badge-pill.low{background:var(--leave-bg);color:var(--leave);font-weight:700;}
+.badge-pill.warn{background:var(--warn-bg);color:var(--warn);font-weight:700;}
 table.workload td.bad{color:var(--bad);}
 table.workload td.ok{color:var(--ok);}
 .small{font-size:11px;color:var(--muted);}
@@ -897,9 +898,16 @@ function renderCalendar(){
     let badges=`<div class="badges${S.showCounts?"":" hideprint"}">`;
     S.shiftTypes.forEach((t,i)=>{
       const have=Object.values(dayShifts).filter(v=>v===t.id).length;
-      const low=have<min(t);
-      const [ink,bg]=CHIP_COLORS[i%3];
-      badges+=`<div class="badge-pill${low?" low":""}" style="--badge-ink:${ink};--badge-bg:${bg}">${t.name} ${have}/${target(t)}</div>`;
+      // coverage badges are a status indicator (met vs. under target), not a shift-type label, so they
+      // use one fixed color set everywhere rather than each shift type's own chip color — that way
+      // "Day 2/2" and "Night 2/2" read the same regardless of which color scheme is selected. Three
+      // tiers: fully staffed (green), short-staffed but not empty e.g. "1/2" (amber), nobody on it at
+      // all e.g. "0/2" (red) — so a partial gap doesn't look identical to a completely uncovered shift.
+      const empty=have===0, short=have<target(t)&&!empty;
+      const cls=empty?" low":(short?" warn":"");
+      const ink=empty?"var(--leave)":(short?"var(--warn)":"var(--ok)");
+      const bg=empty?"var(--leave-bg)":(short?"var(--warn-bg)":"var(--ok-bg)");
+      badges+=`<div class="badge-pill${cls}" style="--badge-ink:${ink};--badge-bg:${bg}">${t.name} ${have}/${target(t)}</div>`;
     });
     badges+="</div>";
     let html=`<div class="daytop"><div class="daynum">${d}</div>${badges}</div><div class="chiplist">`;
