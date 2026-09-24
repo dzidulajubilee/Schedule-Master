@@ -224,14 +224,6 @@ table.workload td.ok{color:var(--ok);}
     </div>
   </div>
 
-  <div class="panel" id="csPanel">
-    <h2>7 · Compulsory starters — <span id="csMonthLabel">—</span></h2>
-    <div class="hint">Up to 4 people who must already be working the shift you pick, on day 1 of the month above — Auto Plot forces them onto it, then lets them run a normal block from there. Applies only to this month; switching month or year clears these slots.</div>
-    <div id="csSlots"></div>
-    <div class="row"><button id="csAddSlot">Add slot</button></div>
-    <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
-  </div>
-
   <div class="calwrap">
     <div class="calhead">
       <h2 style="border:none;padding:0;margin:0" id="calTitle">—</h2>
@@ -264,6 +256,14 @@ table.workload td.ok{color:var(--ok);}
       <input type="file" id="recordsFileImport" accept="application/json" style="display:none">
     </div>
     <div id="recordsList" style="display:flex;flex-direction:column;gap:8px;margin-top:10px;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:14px;" id="csPanel">
+    <h2>7 · Compulsory starters — <span id="csMonthLabel">—</span></h2>
+    <div class="hint">Up to 4 people who must already be working the shift you pick, on day 1 of the month above — Auto Plot forces them onto it, then lets them run a normal block from there. Applies only to this month; switching month or year clears these slots.</div>
+    <div id="csSlots"></div>
+    <div class="row"><button id="csAddSlot">Add slot</button></div>
+    <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
   </div>
 </div>
 </div>
