@@ -1,15 +1,36 @@
 # Schedule Master
 
-Schedule Master is a single-file HTML/JavaScript app for building and validating a monthly staff shift roster. It runs entirely in the browser — no build step, no backend required — and optionally talks to a small local server for shared `staff.json` and `records.json` storage.
+Schedule Master is a single-file HTML/JavaScript app for building and validating a monthly staff shift roster. It runs entirely in the browser — no build step, no backend required — and talks to a small local server (`ScheduleMaster.py`) for shared `staff.json` and `records.json` storage.
 
-Open `ScheduleMaster.html` directly in a browser (double-click it, or `xdg-open ScheduleMaster.html` / `firefox ScheduleMaster.html` from a terminal — it is a web page, not an executable script).
+---
+
+## How to run
+
+1. Make sure Python 3 is installed: `python3 --version`.
+2. Open a terminal *in the folder* containing `ScheduleMaster.py`, `ScheduleMaster.html`, and `staff.json` (they all need to sit together).
+3. Make the server script executable — you only need to do this once:
+   ```
+   chmod +x ScheduleMaster.py
+   ```
+4. Run it:
+   ```
+   ./ScheduleMaster.py
+   ```
+5. A terminal message confirms the server is running and a browser tab opens automatically at `http://127.0.0.1:8743/ScheduleMaster.html` (or the next free port, if 8743 is taken). From here on, staff and saved records are read from and written directly to `staff.json` / `records.json` in that folder — the status line on load says *"Loaded N staff from staff.json (local server)"* to confirm it connected.
+6. To stop the server, go back to the terminal and press `Ctrl+C`.
+
+Next time, just repeat steps 4 and 5 — step 3 only needs doing once per copy of the files.
+
+**Windows note:** `chmod`/`./` are Unix-only. On Windows, run `python ScheduleMaster.py` instead (or double-click the file if `.py` files are associated with Python) — everything else above is the same.
+
+**Don't open `ScheduleMaster.html` directly** (double-clicking it, or dragging it into a browser) — a page only talks to the server if it was loaded *from* that server's address (`http://127.0.0.1:...`), not opened as a local `file://` page. Always start from the terminal as above.
 
 ---
 
 ## 1. What it does
 
 - Holds a **staff list**, a set of **shift types** (e.g. Day / Night) with weekday/weekend headcount rules, optional **keep-apart pairs**, and per-person **leave**.
-- Can **Auto Plot** an entire month automatically, respecting all the coverage and rest rules below.
+- Can **Auto Plot** an entire month automatically, respecting all the coverage and rest rules below — optionally forced to open the month with up to 4 named **compulsory starters** (see §9).
 - Supports **Manual Plot** for one person across one or more days at a time, picked from a small click-to-select calendar, with the same rules enforced live.
 - Shows a live **calendar**, a **workload & validation** table, and a **coverage check** panel.
 - **Prints** a clean roster (and optionally the coverage check) to PDF/paper.
@@ -51,6 +72,7 @@ Everything lives in a single in-memory state object, `S`, saved to `localStorage
 7. **Shift-type variety** — if "Every person needs every shift type" is on, someone who worked at all that month should get at least one of each shift type, not just one.
 8. **Leave blocks shifts** — a person on leave can never be placed that day; saving leave immediately clears any shift already on those dates.
 9. **Weekend leave auto-fill** — if leave spans a weekend (leave either side of Saturday/Sunday), the weekend itself is automatically added as leave too.
+10. **Compulsory starters** — up to 4 named people can be forced onto a chosen shift on day 1 of the month; Auto Plot seeds them in before minimum cover runs, so they count toward it automatically, then they're treated as ordinary people for the rest of the month (see §9).
 
 ---
 
@@ -66,9 +88,10 @@ Auto Plot's job: produce one full month's roster that satisfies the hard rules a
 
 2. **Seed carryover from last month.** For every person, look at the last day of the *previous* month to see if they were mid-block or mid-rest, so a block that started in the last few days of last month correctly continues (or a rest period correctly continues) into this month.
 
-3. **Build one candidate plan** (`buildOnePlan`), in three phases:
+3. **Build one candidate plan** (`buildOnePlan`), in four phases:
+   - **Phase 0 — Compulsory starters.** Anyone set in §9 (and not on leave day 1) is force-placed on their chosen shift on day 1, then seeded a normal rotation-length block from there — the same mechanism used to continue a carried-over run. This runs before Phase 1, so they count toward day 1's minimum cover automatically.
    - **Phase 1 — Minimum cover.** Walk the month day by day. Strict (non-flex) shift types are filled before flexible ones. For each shift type each day:
-     - First, let anyone already mid-block continue their run.
+     - First, let anyone already mid-block (including a Phase 0 compulsory starter) continue their run.
      - Then pick more people from those who are free, under quota, resting-eligible, and keep-apart-safe — preferring whoever has the most spare quota (with a small randomized tie-break, and a slight bias toward whichever shift type they've had less of so far) — until the day's minimum is met.
    - **Phase 2 — Top up spare quota.** For anyone still under their personal quota, try to place additional full rotation-length blocks (preferring a slot with a full rest gap on both sides, falling back to a 1-day gap only if nothing fully-rested exists), shrinking the block size if a person's remaining quota is smaller than one full block.
    - **Phase 3 — Even things out.** Repeatedly find whoever is most *over* their fair share and whoever has the most *room*, and move a single flexible-shift day between them — but only at the edge of a block or a lone day, never splitting a block in half, and only if it doesn't break rest, keep-apart, or run-length rules.
@@ -156,10 +179,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Auto Plot clicked] --> B[Pick rotation patterns to try:<br/>3on/3off, 2on/2off, mix — or the fixed one]
+    A[Auto Plot clicked] --> A0{Compulsory starters<br/>valid? §9}
+    A0 -- no --> A0X[Stop — report the<br/>conflict, plan nothing]
+    A0 -- yes --> B[Pick rotation patterns to try:<br/>3on/3off, 2on/2off, mix — or the fixed one]
     B --> C[For each pattern: run N attempts]
     C --> D[Seed carryover from last day<br/>of previous month]
-    D --> E[Phase 1: Minimum cover<br/>day by day, strict types first]
+    D --> D2[Phase 0: force compulsory<br/>starters onto day 1<br/>leave conflicts skipped]
+    D2 --> E[Phase 1: Minimum cover<br/>day by day, strict types first]
     E --> F[Phase 2: Top up spare quota<br/>in full/partial blocks, rested slots preferred]
     F --> G[Phase 3: Even out totals<br/>move single edge/lone days only]
     G --> H[Score the plan<br/>lower = better]
@@ -170,7 +196,7 @@ flowchart TD
     K -- yes --> C
     K -- no --> L[Refine overall best pattern<br/>with extra attempts]
     L --> M[Commit winning plan<br/>to this month's shifts]
-    M --> N[Report pattern, score,<br/>and any remaining gaps]
+    M --> N[Report pattern, score,<br/>starters used, leave skips,<br/>and any remaining gaps]
 ```
 
 ---
@@ -197,3 +223,19 @@ The **Saved records** panel lets you keep a permanent, labeled history of past r
 - **View**: each record shows a one-line summary (staff/shift-type/placed-shift counts) plus a "View" button that expands the complete saved snapshot as raw JSON, so you can always refer back to exactly what was saved.
 - **Delete**: each record has its own "Delete" button (with a confirmation prompt); deleting one only removes that record.
 - **Storage**: records live in their own file, `records.json`, kept apart from `staff.json`. In server mode they're read from and written to it directly (`GET`/`PUT api/records`); in browser-only mode they're kept in `localStorage` under `planthat_records`, with "Export records.json" / "Import records.json" buttons to move them to/from a file by hand, mirroring how staff are exported/imported.
+
+---
+
+## 9. Compulsory starters
+
+The **Compulsory starters** panel lets you name up to 4 people who must already be working a chosen shift on **day 1** of the month, before Auto Plot runs — useful when you know a specific opening lineup is required regardless of what Auto Plot would otherwise pick.
+
+- **Scope: one-off, not a standing rule.** The slots apply only to the month shown when you set them. Switching month or year (via the calendar's own selectors) clears all 4 slots back to empty — they do **not** carry forward to the next month automatically.
+- **Setting it up**: each of the up to 4 slots is a person + a shift type. Leaving a slot's person or shift empty just means that slot isn't active yet.
+- **Validation, live in the panel**:
+  - The same person picked in two slots → blocked (duplicate), shown as a warning under the slots.
+  - Two people who are a keep-apart pair, both set to start on the *same* shift → blocked, same as anywhere else a keep-apart clash would happen.
+  - These two are hard errors: Auto Plot refuses to run at all until they're fixed, and the panel tells you exactly what to change.
+- **Leave on day 1**: not a hard error. If a compulsory starter is on leave on the 1st, Auto Plot skips forcing that person for day 1 and places them normally instead (leave always blocks a placement, for anyone) — and says so afterwards in the status line, e.g. *"X was on leave on the 1st — placed normally instead of forced."*
+- **How Auto Plot uses it**: this runs as a new **Phase 0**, before minimum cover (see §4) — each active compulsory starter is force-placed on their chosen shift on day 1, then seeded a normal rotation-length block from there, so they count toward day 1's minimum headcount automatically rather than needing a separate carve-out. After day 1, they're treated as an ordinary person: quota, rest, keep-apart, and the fairness balancing in Phase 3 all still apply to them normally.
+- **Carryover overrides**: if forcing someone onto day 1 would normally have meant more rest, or continuing a different shift type from the end of last month, the compulsory-starter rule wins — they're placed as requested — but the status line notes the override, e.g. *"X was mid-block on Night — starting them on Day instead overrides that."*

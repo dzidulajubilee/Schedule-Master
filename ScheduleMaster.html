@@ -94,9 +94,12 @@ table.workload td.ok{color:var(--ok);}
 .record-meta{font-size:11px;color:var(--muted);margin-top:2px;}
 .record-summary{margin-top:4px;}
 .record-json{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;max-height:260px;overflow:auto;font-size:11px;}
+.cs-slot{display:flex;gap:6px;align-items:center;margin:5px 0;}
+.cs-slot select{flex:1;min-width:0;}
+.cs-slot button{flex:0 0 auto;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -221,6 +224,14 @@ table.workload td.ok{color:var(--ok);}
     </div>
   </div>
 
+  <div class="panel" id="csPanel">
+    <h2>7 · Compulsory starters — <span id="csMonthLabel">—</span></h2>
+    <div class="hint">Up to 4 people who must already be working the shift you pick, on day 1 of the month above — Auto Plot forces them onto it, then lets them run a normal block from there. Applies only to this month; switching month or year clears these slots.</div>
+    <div id="csSlots"></div>
+    <div class="row"><button id="csAddSlot">Add slot</button></div>
+    <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
+  </div>
+
   <div class="calwrap">
     <div class="calhead">
       <h2 style="border:none;padding:0;margin:0" id="calTitle">—</h2>
@@ -275,22 +286,19 @@ function defaultState(){
     ],
     expShifts:14, restHrs:11, rotation:"auto", requireAll:true, weekendLeaveNoQuota:true, includeCoverageInPrint:false,
     keepApart:[[null,null],[null,null]],
+    compulsoryStarters: [],
     leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null
   };
 }
 let S=load();
 function load(){
-  try{
-    let raw=localStorage.getItem("schedulemaster_state");
-    if(!raw){ raw=localStorage.getItem("planthat_state"); } // one-time migration from the old key name
-    if(raw) return Object.assign(defaultState(), JSON.parse(raw));
-  }catch(e){}
+  try{ const raw=localStorage.getItem("planthat_state"); if(raw) return Object.assign(defaultState(), JSON.parse(raw)); }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem("planthat_state", JSON.stringify(S)); }catch(e){} }
 $("btnResetAll").addEventListener("click",()=>{
   if(!confirm("This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. staff.json on disk is untouched. This can't be undone. Continue?")) return;
-  try{ localStorage.removeItem("schedulemaster_state"); localStorage.removeItem("planthat_state"); }catch(e){}
+  try{ localStorage.removeItem("planthat_state"); }catch(e){}
   location.reload();
 });
 
@@ -412,6 +420,7 @@ function renderStaff(){
       delete S.leave[name];
       for(const d in S.shifts) delete S.shifts[d][name];
       S.keepApart.forEach(p=>{ if(p[0]===name)p[0]=null; if(p[1]===name)p[1]=null; });
+      (S.compulsoryStarters||[]).forEach(cs=>{ if(cs.person===name) cs.person=null; });
       save(); renderAll();
     });
     ul.appendChild(li);
@@ -687,8 +696,8 @@ function fillMonthYear(){
   $("selMonth").innerHTML=MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join("");
   $("selMonth").value=S.month; $("selYear").value=S.year;
 }
-$("selMonth").addEventListener("change",()=>{ S.month=Number($("selMonth").value); mpSelected.clear(); save(); renderAll(); });
-$("selYear").addEventListener("change",()=>{ S.year=Number($("selYear").value)||S.year; mpSelected.clear(); save(); renderAll(); });
+$("selMonth").addEventListener("change",()=>{ S.month=Number($("selMonth").value); mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll(); });
+$("selYear").addEventListener("change",()=>{ S.year=Number($("selYear").value)||S.year; mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll(); });
 $("viewSel").addEventListener("change",()=>{ S.view=$("viewSel").value; save(); renderCalendar(); });
 $("showCounts").addEventListener("change",()=>{ S.showCounts=$("showCounts").checked; save(); renderCalendar(); });
 $("printCoverage").addEventListener("change",()=>{ S.includeCoverageInPrint=$("printCoverage").checked; save(); renderCoverage(); });
@@ -879,7 +888,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  fillMonthYear(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCalendar(); renderWorkload(); renderCoverage();
+  fillMonthYear(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -908,7 +917,7 @@ $("fileImport").addEventListener("change",e=>{
   reader.readAsText(f);
 });
 
-// ---------- local server (Start ScheduleMaster.bat / ScheduleMaster.py) ----------
+// ---------- local server (Start PlanTHat.bat / PlanTHat.py) ----------
 const API="api/staff";
 S.serverMode=false;
 async function tryServerLoad(){
@@ -949,14 +958,10 @@ const RECORDS_API="api/records";
 let recordsServerMode=false;
 
 function loadRecordsLocal(){
-  try{
-    let raw=localStorage.getItem("schedulemaster_records");
-    if(!raw){ raw=localStorage.getItem("planthat_records"); } // one-time migration from the old key name
-    if(raw){ const v=JSON.parse(raw); if(Array.isArray(v)) return v; }
-  }catch(e){}
+  try{ const raw=localStorage.getItem("planthat_records"); if(raw){ const v=JSON.parse(raw); if(Array.isArray(v)) return v; } }catch(e){}
   return [];
 }
-function saveRecordsLocal(){ try{ localStorage.setItem("schedulemaster_records", JSON.stringify(RECORDS)); }catch(e){} }
+function saveRecordsLocal(){ try{ localStorage.setItem("planthat_records", JSON.stringify(RECORDS)); }catch(e){} }
 
 async function tryServerLoadRecords(){
   try{
@@ -1018,9 +1023,7 @@ function renderRecords(){
       <div class="record-head">
         <strong>${rec.label}</strong>
         <div class="row" style="margin:0;gap:4px;">
-          <button data-act="plot" data-id="${rec.id}" title="Load this record onto the live calendar">Plot</button>
           <button data-act="view" data-id="${rec.id}">View</button>
-          <button data-act="overwrite" data-id="${rec.id}" title="Replace this record with the current month's live data">Overwrite</button>
           <button data-act="delete" data-id="${rec.id}" title="Delete this record">Delete</button>
         </div>
       </div>
@@ -1028,24 +1031,6 @@ function renderRecords(){
       <div class="record-summary small">${recordSummary(rec)}</div>
       <pre class="record-json" data-id="${rec.id}" style="display:none;"></pre>`;
     host.appendChild(card);
-  });
-  host.querySelectorAll('button[data-act="plot"]').forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
-      if(!confirm(`Load "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) onto the live calendar?\n\nThis replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (this record itself is untouched either way).`)) return;
-      plotRecord(rec);
-    });
-  });
-  host.querySelectorAll('button[data-act="overwrite"]').forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
-      if(!confirm(`Overwrite the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) with what's currently live (${MONTHS[S.month]} ${S.year})? This replaces its saved staff, shift types, keep-apart pairs, leave, shifts and settings — the old snapshot can't be recovered.`)) return;
-      const fresh=snapshotNow(rec.label);
-      rec.label=fresh.label; rec.savedAt=fresh.savedAt; rec.year=fresh.year; rec.month=fresh.month; rec.data=fresh.data;
-      await persistRecords();
-      renderRecords();
-      setStatus(`Overwrote record "${rec.label}" (${recordSummary(rec)}).`);
-    });
   });
   host.querySelectorAll('button[data-act="delete"]').forEach(btn=>{
     btn.addEventListener("click", async ()=>{
@@ -1067,23 +1052,6 @@ function renderRecords(){
       btn.textContent=opening?"Hide":"View";
     });
   });
-}
-function plotRecord(rec){
-  const d=rec.data;
-  // Replace live staff/shiftTypes/keepApart/leave/settings with the record's snapshot,
-  // and merge (overwrite) that month's shifts into the live shifts object — other months
-  // already plotted in S.shifts are left alone.
-  S.staff=JSON.parse(JSON.stringify(d.staff));
-  S.shiftTypes=JSON.parse(JSON.stringify(d.shiftTypes));
-  S.keepApart=JSON.parse(JSON.stringify(d.keepApart));
-  S.leave=JSON.parse(JSON.stringify(d.leave));
-  S.expShifts=d.expShifts; S.restHrs=d.restHrs; S.rotation=d.rotation;
-  S.requireAll=d.requireAll; S.weekendLeaveNoQuota=d.weekendLeaveNoQuota;
-  for(const ds in d.shifts) S.shifts[ds]=JSON.parse(JSON.stringify(d.shifts[ds]));
-  S.year=rec.year; S.month=rec.month;
-  save();
-  renderAll();
-  setStatus(`Plotted record "${rec.label}" onto ${MONTHS[rec.month]} ${rec.year}.`);
 }
 $("recordSave").addEventListener("click", async ()=>{
   const rec=snapshotNow($("recordLabel").value);
@@ -1114,10 +1082,93 @@ $("recordsFileImport").addEventListener("change", e=>{
   reader.readAsText(f);
 });
 
+// ---------- compulsory starters (one-off: cleared on month/year navigation, see renderAll callers) ----------
+function renderCompulsoryStarters(){
+  $("csMonthLabel").textContent=`${MONTHS[S.month]} ${S.year}`;
+  const host=$("csSlots"); host.innerHTML="";
+  const list=S.compulsoryStarters||(S.compulsoryStarters=[]);
+  list.forEach((cs,i)=>{
+    const row=document.createElement("div"); row.className="cs-slot";
+    const personOpts=`<option value="">— person —</option>`+S.staff.map(n=>`<option value="${n}" ${cs.person===n?"selected":""}>${n}</option>`).join("");
+    const typeOpts=`<option value="">— shift —</option>`+S.shiftTypes.map(t=>`<option value="${t.id}" ${cs.shiftType===t.id?"selected":""}>${t.name}</option>`).join("");
+    row.innerHTML=`<select data-i="${i}" data-f="person">${personOpts}</select><select data-i="${i}" data-f="shiftType">${typeOpts}</select><button data-i="${i}" title="Remove slot">✕</button>`;
+    row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
+      list[i][sel.dataset.f]=sel.value||null; save(); renderCompulsoryStarters();
+    }));
+    row.querySelector("button").addEventListener("click",()=>{
+      list.splice(i,1); save(); renderCompulsoryStarters();
+    });
+    host.appendChild(row);
+  });
+  $("csAddSlot").disabled=list.length>=4;
+  const {errors}=compulsoryStartersCheck();
+  $("csWarnings").textContent=errors.join(" ");
+}
+$("csAddSlot").addEventListener("click",()=>{
+  const list=S.compulsoryStarters||(S.compulsoryStarters=[]);
+  if(list.length>=4) return;
+  list.push({person:null,shiftType:null});
+  save(); renderCompulsoryStarters();
+});
+
+// valid, de-duplicated slots: drops incomplete rows and a person picked twice (second occurrence dropped)
+function compulsoryStartersList(){
+  const seen=new Set(); const out=[];
+  (S.compulsoryStarters||[]).forEach(cs=>{
+    if(!cs.person||!cs.shiftType||seen.has(cs.person)) return;
+    seen.add(cs.person); out.push({person:cs.person,shiftType:cs.shiftType});
+  });
+  return out;
+}
+// hard-error checks shown live in the panel and re-checked before Auto Plot runs; leave conflicts are
+// NOT an error here — those are resolved by skipping that person and placing them normally (see autoPlot)
+function compulsoryStartersCheck(){
+  const errors=[];
+  const filled=(S.compulsoryStarters||[]).filter(cs=>cs.person&&cs.shiftType);
+  const seenNames=new Set();
+  filled.forEach(cs=>{
+    if(seenNames.has(cs.person)) errors.push(`${cs.person} is picked in more than one slot — remove the duplicate.`);
+    seenNames.add(cs.person);
+  });
+  const active=compulsoryStartersList();
+  const pairs=normalizedPairs();
+  for(let i=0;i<active.length;i++) for(let j=i+1;j<active.length;j++){
+    const a=active[i], b=active[j];
+    if(a.shiftType!==b.shiftType) continue; // different shifts day 1 - nothing shared, no clash
+    if(pairs.some(p=>p.includes(a.person)&&p.includes(b.person))){
+      errors.push(`${a.person} and ${b.person} are a keep-apart pair and can't both start on ${shiftById(a.shiftType)?.name||a.shiftType} day 1 — remove one or change a shift.`);
+    }
+  }
+  return {errors};
+}
+// informational only (not blocking): forcing someone onto day 1 can override rest/mid-block carryover
+// from the end of last month; skip-and-place-normally still applies to leave (handled in autoPlot)
+function csCarryoverNotes(activeStarters,day1){
+  if(!activeStarters.length) return [];
+  const pattern=S.rotation==="auto"?"3":S.rotation;
+  const carry=seedCarryover([day1],pattern);
+  const notes=[];
+  activeStarters.forEach(cs=>{
+    const ri=carry[cs.person]; if(!ri) return;
+    if(ri.offLeft>0) notes.push(`${cs.person} would still be resting per the rotation pattern on the 1st — starting them overrides that rest.`);
+    else if(ri.type && ri.type!==cs.shiftType && ri.daysLeft>0) notes.push(`${cs.person} was mid-block on ${shiftById(ri.type)?.name||ri.type} — starting them on ${shiftById(cs.shiftType)?.name||cs.shiftType} instead overrides that.`);
+  });
+  return notes;
+}
+
 // ---------- Auto Plot ----------
 function autoPlot(){
+  const {errors}=compulsoryStartersCheck();
+  if(errors.length){ setStatus(`Can't run Auto Plot — fix Compulsory Starters (7) first: ${errors.join(" ")}`); return; }
+
   const n=daysInMonth(S.year,S.month);
   const dates=[]; for(let d=1; d<=n; d++) dates.push(ymd(S.year,S.month,d));
+  const day1=dates[0];
+  const allStarters=compulsoryStartersList();
+  const activeStarters=allStarters.filter(cs=>!isOnLeave(cs.person,day1));
+  const skippedForLeave=allStarters.filter(cs=>isOnLeave(cs.person,day1));
+  const carryNotes=csCarryoverNotes(activeStarters,day1);
+
   const patterns = S.rotation==="auto" ? ["3","2","mix"] : [S.rotation];
   const attemptsPer = S.rotation==="auto" ? 12 : 40;
   let best=null;
@@ -1125,7 +1176,7 @@ function autoPlot(){
   function tryPattern(pattern,attempts){
     let localBest=null;
     for(let a=0;a<attempts;a++){
-      const plan=buildOnePlan(dates,pattern);
+      const plan=buildOnePlan(dates,pattern,activeStarters);
       const score=scorePlan(plan,dates);
       if(!localBest||score<localBest.score) localBest={plan,score};
     }
@@ -1143,7 +1194,10 @@ function autoPlot(){
   const gapCount=(best.score>=1000000)?Math.floor(best.score/1000000):0;
   const pairsUsed=normalizedPairs();
   const pairsNote=pairsUsed.length? ` Keeping ${pairsUsed.map(p=>`${p[0]} & ${p[1]}`).join(" and ")} apart.` : "";
-  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${pairsNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
+  const startersNote=activeStarters.length? ` Compulsory starters (day 1): ${activeStarters.map(cs=>`${cs.person} → ${shiftById(cs.shiftType)?.name||cs.shiftType}`).join(", ")}.` : "";
+  const leaveNote=skippedForLeave.length? ` ${skippedForLeave.map(cs=>cs.person).join(", ")} ${skippedForLeave.length===1?"was":"were"} on leave on the 1st — placed normally instead of forced.` : "";
+  const carryNote=carryNotes.length? ` ${carryNotes.join(" ")}` : "";
+  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
   renderAll();
 }
 function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return Math.random()<0.5?2:3; }
@@ -1171,7 +1225,7 @@ function seedCarryover(dates,pattern){
   return carry;
 }
 
-function buildOnePlan(dates,pattern){
+function buildOnePlan(dates,pattern,activeStarters){
   const plan={}; // dateStr -> {person:typeId}
   const runInfo=seedCarryover(dates,pattern); // person -> {type, daysLeft, blockLen, offLeft}
   const used={}; S.staff.forEach(p=>used[p]=0);
@@ -1190,6 +1244,18 @@ function buildOnePlan(dates,pattern){
     }
     return true;
   }
+
+  // Phase 0: compulsory starters — force each onto day 1 on their chosen shift (already validated as
+  // leave-free and keep-apart-safe by autoPlot), then seed a normal block for them from there, exactly
+  // like a carried-over run would. This makes them count toward day 1's minimum cover automatically,
+  // and after this they're ordinary people again for quota, rest and fairness purposes.
+  (activeStarters||[]).forEach(cs=>{
+    const day1=dates[0];
+    if(!isFree(day1,cs.person)) return; // already placed — shouldn't happen, but stay safe
+    const bl=blockLenFor(pattern);
+    place(day1,cs.person,cs.shiftType);
+    runInfo[cs.person]={type:cs.shiftType,daysLeft:bl-1,blockLen:bl,offLeft:0,lastEnd:day1};
+  });
 
   // Phase 1: minimum cover, strict shift types before flexible ones
   const order=[...S.shiftTypes].sort((a,b)=>(a.flex===b.flex)?0:(a.flex?1:-1));
