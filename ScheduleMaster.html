@@ -26,6 +26,85 @@
   --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
   --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340;
 }
+/* ---- selectable calendar color schemes (§ palette swatches near the calendar) ----
+   each scheme restates ink+bg for light mode, then just the (darker) bg for dark mode,
+   the same pattern the default "classic" scheme above already follows. */
+:root[data-palette="ocean"]{
+  --chip-1:#0f7a8c; --chip-1-bg:#dcf3f6;
+  --chip-2:#1f4e8c; --chip-2-bg:#dde8fb;
+  --chip-3:#3c6e71; --chip-3-bg:#dbe9e9;
+  --leave:#b23a2e; --leave-bg:#f8ded9;
+}
+:root[data-palette="sunset"]{
+  --chip-1:#d1495b; --chip-1-bg:#fbe0e4;
+  --chip-2:#e08e2b; --chip-2-bg:#fbeedc;
+  --chip-3:#8a4fc9; --chip-3-bg:#f0e3fb;
+  --leave:#a3271f; --leave-bg:#f5dbd8;
+}
+:root[data-palette="forest"]{
+  --chip-1:#2f6b3a; --chip-1-bg:#dff0e2;
+  --chip-2:#8a6a2f; --chip-2-bg:#f0e8d4;
+  --chip-3:#2f6b6b; --chip-3-bg:#dcefef;
+  --leave:#b23b2e; --leave-bg:#f8ded9;
+}
+:root[data-palette="berry"]{
+  --chip-1:#a3245e; --chip-1-bg:#f9dde9;
+  --chip-2:#5b3fa0; --chip-2-bg:#e9e2fb;
+  --chip-3:#1f4e8c; --chip-3-bg:#dde8fb;
+  --leave:#8f1710; --leave-bg:#f2c9c4;
+}
+:root[data-palette="slate"]{
+  /* re-tuned from the original slate scheme: chip-1/chip-2 were both muted blue-grays with too
+     little hue/lightness difference to tell Day from Night apart at a glance. chip-2 is now a
+     warm brown instead of a second cool gray, and chip-1/chip-3 pushed further apart in hue. */
+  --chip-1:#2f5d8c; --chip-1-bg:#dbe8f4;
+  --chip-2:#8a5a2f; --chip-2-bg:#f0e6d8;
+  --chip-3:#3f7d72; --chip-3-bg:#dcefe9;
+  --leave:#a3392e; --leave-bg:#f6ddd8;
+}
+:root[data-palette="deep"]{
+  /* deep, saturated backgrounds with light text (the other schemes are pale backgrounds with
+     saturated text) — an option for people who want stronger color separation on screen and
+     on paper. Text stays light-on-dark here in both light and dark mode, so it's left out of
+     the prefers-color-scheme/data-theme dark overrides below. Leave uses the same flat red as
+     "deep-bold" so Leave looks consistent across every scheme in the deep family. */
+  --chip-1:#eaf2ff; --chip-1-bg:#123a66;
+  --chip-2:#fff2df; --chip-2-bg:#7a4416;
+  --chip-3:#f5ecff; --chip-3-bg:#4a2170;
+  --leave:#ffffff; --leave-bg:#e8514f;
+}
+:root[data-palette="deep-bold"]{
+  /* flat, fully-saturated pill look — solid blue/orange/red with bold white text, no pastel
+     undertone at all. Same light-text-on-dark-bg approach as "deep" above. */
+  --chip-1:#ffffff; --chip-1-bg:#3b76e8;
+  --chip-2:#000000; --chip-2-bg:#e8960b;
+  --chip-3:#ffffff; --chip-3-bg:#16a34a;
+  --leave:#ffffff; --leave-bg:#e8514f;
+}
+:root[data-palette="deep-emerald"]{
+  --chip-1:#e9fff5; --chip-1-bg:#0f5c42;
+  --chip-2:#ffe9f7; --chip-2-bg:#7a1a56;
+  --chip-3:#eef0ff; --chip-3-bg:#2c2f7a;
+  --leave:#ffffff; --leave-bg:#e8514f;
+}
+:root[data-palette="deep-crimson"]{
+  --chip-1:#ffeef0; --chip-1-bg:#8c1e2b;
+  --chip-2:#fff5e6; --chip-2-bg:#7a4a0f;
+  --chip-3:#eaf2ff; --chip-3-bg:#1f3a5f;
+  --leave:#ffffff; --leave-bg:#e8514f;
+}
+@media (prefers-color-scheme:dark){
+  :root[data-palette="ocean"]:not([data-theme="light"]){ --chip-1-bg:#123236; --chip-2-bg:#16233d; --chip-3-bg:#1c2e2e; --leave-bg:#3a1e19; }
+  :root[data-palette="sunset"]:not([data-theme="light"]){ --chip-1-bg:#3a1620; --chip-2-bg:#3a2a12; --chip-3-bg:#2c1c3a; --leave-bg:#331713; }
+  :root[data-palette="forest"]:not([data-theme="light"]){ --chip-1-bg:#163a1d; --chip-2-bg:#332a14; --chip-3-bg:#163232; --leave-bg:#3a1e19; }
+  :root[data-palette="berry"]:not([data-theme="light"]){ --chip-1-bg:#3a1626; --chip-2-bg:#241c3a; --chip-3-bg:#16233d; --leave-bg:#2e120d; }
+  :root[data-palette="slate"]:not([data-theme="light"]){ --chip-1-bg:#1c2f42; --chip-2-bg:#33241a; --chip-3-bg:#17322f; --leave-bg:#331a15; }
+}
+:root[data-palette="ocean"][data-theme="dark"]{ --chip-1-bg:#123236; --chip-2-bg:#16233d; --chip-3-bg:#1c2e2e; --leave-bg:#3a1e19; }
+:root[data-palette="sunset"][data-theme="dark"]{ --chip-1-bg:#3a1620; --chip-2-bg:#3a2a12; --chip-3-bg:#2c1c3a; --leave-bg:#331713; }
+:root[data-palette="forest"][data-theme="dark"]{ --chip-1-bg:#163a1d; --chip-2-bg:#332a14; --chip-3-bg:#163232; --leave-bg:#3a1e19; }
+:root[data-palette="berry"][data-theme="dark"]{ --chip-1-bg:#3a1626; --chip-2-bg:#241c3a; --chip-3-bg:#16233d; --leave-bg:#2e120d; }
+:root[data-palette="slate"][data-theme="dark"]{ --chip-1-bg:#1c2f42; --chip-2-bg:#33241a; --chip-3-bg:#17322f; --leave-bg:#331a15; }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;}
@@ -94,12 +173,14 @@ table.workload td.ok{color:var(--ok);}
 .record-meta{font-size:11px;color:var(--muted);margin-top:2px;}
 .record-summary{margin-top:4px;}
 .record-json{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;max-height:260px;overflow:auto;font-size:11px;}
+.swatch{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);padding:0;cursor:pointer;}
+.swatch.active{outline:2px solid var(--text);outline-offset:2px;}
 .cs-slot{display:flex;gap:6px;align-items:center;margin:5px 0;}
 .cs-slot select{flex:1;min-width:0;}
 .cs-slot button{flex:0 0 auto;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#paletteRow{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -108,13 +189,18 @@ table.workload td.ok{color:var(--ok);}
   #coverageSection.hideprint{display:none;}
   /* force the browser to actually print background colors instead of silently dropping them */
   *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}
-  /* deeper, more saturated palette for print only - the on-screen pastel tones read as washed-out on paper */
-  :root{
-    --chip-1:#0d3fb0; --chip-1-bg:#b9cdf7;
-    --chip-2:#8a4400; --chip-2-bg:#f0c98a;
-    --chip-3:#3a1f99; --chip-3-bg:#cabdf0;
-    --leave:#8f1710; --leave-bg:#f2b3ac;
-    --border:#8a8578;
+  /* deeper, more saturated palette for print only - the on-screen pastel tones (classic/ocean/sunset/
+     forest/berry/slate) read as washed-out on paper, so they're forced into these fixed print-safe
+     colors. Any "deep" family scheme (data-palette starting with "deep") is already saturated enough to
+     print as-is, so it's excluded here and prints exactly as selected on screen. !important is needed
+     because a selected on-screen scheme (:root[data-palette="x"]) has higher CSS specificity than this
+     plain :root rule and would otherwise win even inside @media print. */
+  :root:not([data-palette^="deep"]){
+    --chip-1:#0d3fb0 !important; --chip-1-bg:#b9cdf7 !important;
+    --chip-2:#8a4400 !important; --chip-2-bg:#f0c98a !important;
+    --chip-3:#3a1f99 !important; --chip-3-bg:#cabdf0 !important;
+    --leave:#8f1710 !important; --leave-bg:#f2b3ac !important;
+    --border:#8a8578 !important;
   }
   .chip{font-weight:700;border:1px solid rgba(0,0,0,.25);font-size:9px;padding:0 4px;margin-top:1px;}
   .badge-pill{border:1px solid rgba(0,0,0,.2);font-size:8px;padding:0 4px;}
@@ -227,7 +313,10 @@ table.workload td.ok{color:var(--ok);}
   <div class="calwrap">
     <div class="calhead">
       <h2 style="border:none;padding:0;margin:0" id="calTitle">—</h2>
-      <select id="viewSel"></select>
+      <div class="row" style="margin:0;gap:10px;">
+        <div class="row" id="paletteRow" style="margin:0;gap:4px;" title="Calendar color scheme"></div>
+        <select id="viewSel"></select>
+      </div>
     </div>
     <div class="legend" id="legend"></div>
     <div class="grid" id="weekdayRow"></div>
@@ -274,6 +363,38 @@ table.workload td.ok{color:var(--ok);}
 const $=id=>document.getElementById(id);
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const CHIP_COLORS=[["var(--chip-1)","var(--chip-1-bg)"],["var(--chip-2)","var(--chip-2-bg)"],["var(--chip-3)","var(--chip-3-bg)"]];
+// each scheme's `inks` are just for the little swatch preview button; the actual colors live in the
+// matching :root[data-palette="…"] CSS block above, so switching schemes needs no JS color logic at all
+const PALETTES=[
+  {id:"classic",name:"Classic",inks:["#2e6fec","#c9781a","#6a52d6"]},
+  {id:"ocean",name:"Ocean",inks:["#0f7a8c","#1f4e8c","#3c6e71"]},
+  {id:"sunset",name:"Sunset",inks:["#d1495b","#e08e2b","#8a4fc9"]},
+  {id:"forest",name:"Forest",inks:["#2f6b3a","#8a6a2f","#2f6b6b"]},
+  {id:"berry",name:"Berry",inks:["#a3245e","#5b3fa0","#1f4e8c"]},
+  {id:"slate",name:"Slate",inks:["#2f5d8c","#8a5a2f","#3f7d72"]},
+  {id:"deep",name:"Deep",inks:["#123a66","#7a4416","#4a2170"]},
+  {id:"deep-bold",name:"Deep Bold",inks:["#3b76e8","#e8960b","#16a34a"]},
+  {id:"deep-emerald",name:"Deep Emerald",inks:["#0f5c42","#7a1a56","#2c2f7a"]},
+  {id:"deep-crimson",name:"Deep Crimson",inks:["#8c1e2b","#7a4a0f","#1f3a5f"]}
+];
+function applyPalette(){
+  document.documentElement.setAttribute("data-palette", S.palette&&S.palette!=="classic"?S.palette:"");
+}
+function renderPaletteSwatches(){
+  applyPalette();
+  const host=$("paletteRow"); host.innerHTML="";
+  PALETTES.forEach(p=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.title=p.name;
+    btn.className="swatch"+((S.palette||"classic")===p.id?" active":"");
+    btn.style.background=`linear-gradient(90deg, ${p.inks[0]} 0 33%, ${p.inks[1]} 33% 66%, ${p.inks[2]} 66% 100%)`;
+    btn.addEventListener("click",()=>{
+      S.palette=p.id; save(); renderPaletteSwatches();
+    });
+    host.appendChild(btn);
+  });
+}
 
 function defaultState(){
   const now=new Date();
@@ -287,18 +408,22 @@ function defaultState(){
     expShifts:14, restHrs:11, rotation:"auto", requireAll:true, weekendLeaveNoQuota:true, includeCoverageInPrint:false,
     keepApart:[[null,null],[null,null]],
     compulsoryStarters: [],
-    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null
+    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null, palette:"classic"
   };
 }
 let S=load();
 function load(){
-  try{ const raw=localStorage.getItem("planthat_state"); if(raw) return Object.assign(defaultState(), JSON.parse(raw)); }catch(e){}
+  try{
+    let raw=localStorage.getItem("schedulemaster_state");
+    if(!raw){ raw=localStorage.getItem("planthat_state"); } // one-time migration from the old key name
+    if(raw) return Object.assign(defaultState(), JSON.parse(raw));
+  }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem("planthat_state", JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} }
 $("btnResetAll").addEventListener("click",()=>{
   if(!confirm("This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. staff.json on disk is untouched. This can't be undone. Continue?")) return;
-  try{ localStorage.removeItem("planthat_state"); }catch(e){}
+  try{ localStorage.removeItem("schedulemaster_state"); localStorage.removeItem("planthat_state"); }catch(e){}
   location.reload();
 });
 
@@ -888,7 +1013,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  fillMonthYear(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage();
+  fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -917,7 +1042,7 @@ $("fileImport").addEventListener("change",e=>{
   reader.readAsText(f);
 });
 
-// ---------- local server (Start PlanTHat.bat / PlanTHat.py) ----------
+// ---------- local server (Start ScheduleMaster.bat / ScheduleMaster.py) ----------
 const API="api/staff";
 S.serverMode=false;
 async function tryServerLoad(){
@@ -958,10 +1083,14 @@ const RECORDS_API="api/records";
 let recordsServerMode=false;
 
 function loadRecordsLocal(){
-  try{ const raw=localStorage.getItem("planthat_records"); if(raw){ const v=JSON.parse(raw); if(Array.isArray(v)) return v; } }catch(e){}
+  try{
+    let raw=localStorage.getItem("schedulemaster_records");
+    if(!raw){ raw=localStorage.getItem("planthat_records"); } // one-time migration from the old key name
+    if(raw){ const v=JSON.parse(raw); if(Array.isArray(v)) return v; }
+  }catch(e){}
   return [];
 }
-function saveRecordsLocal(){ try{ localStorage.setItem("planthat_records", JSON.stringify(RECORDS)); }catch(e){} }
+function saveRecordsLocal(){ try{ localStorage.setItem("schedulemaster_records", JSON.stringify(RECORDS)); }catch(e){} }
 
 async function tryServerLoadRecords(){
   try{
@@ -1003,9 +1132,28 @@ function snapshotNow(label){
     data: JSON.parse(JSON.stringify({
       staff:S.staff, shiftTypes:S.shiftTypes, keepApart:S.keepApart, leave:S.leave, shifts:monthShifts,
       expShifts:S.expShifts, restHrs:S.restHrs, rotation:S.rotation,
-      requireAll:S.requireAll, weekendLeaveNoQuota:S.weekendLeaveNoQuota
+      requireAll:S.requireAll, weekendLeaveNoQuota:S.weekendLeaveNoQuota, compulsoryStarters:S.compulsoryStarters
     }))
   };
+}
+function plotRecord(rec){
+  const d=rec.data;
+  // Replace live staff/shiftTypes/keepApart/leave/settings with the record's snapshot,
+  // and merge (overwrite) that month's shifts into the live shifts object — other months
+  // already plotted in S.shifts are left alone. Fields added after this record was saved
+  // (e.g. compulsoryStarters) fall back to sensible defaults instead of wiping out live data.
+  S.staff=JSON.parse(JSON.stringify(d.staff));
+  S.shiftTypes=JSON.parse(JSON.stringify(d.shiftTypes));
+  S.keepApart=JSON.parse(JSON.stringify(d.keepApart));
+  S.leave=JSON.parse(JSON.stringify(d.leave));
+  S.expShifts=d.expShifts; S.restHrs=d.restHrs; S.rotation=d.rotation;
+  S.requireAll=d.requireAll; S.weekendLeaveNoQuota=d.weekendLeaveNoQuota;
+  if(d.compulsoryStarters) S.compulsoryStarters=JSON.parse(JSON.stringify(d.compulsoryStarters));
+  for(const ds in d.shifts) S.shifts[ds]=JSON.parse(JSON.stringify(d.shifts[ds]));
+  S.year=rec.year; S.month=rec.month;
+  save();
+  renderAll();
+  setStatus(`Plotted record "${rec.label}" onto ${MONTHS[rec.month]} ${rec.year}.`);
 }
 function recordSummary(rec){
   const d=rec.data;
@@ -1023,7 +1171,9 @@ function renderRecords(){
       <div class="record-head">
         <strong>${rec.label}</strong>
         <div class="row" style="margin:0;gap:4px;">
+          <button data-act="plot" data-id="${rec.id}" title="Load this record onto the live calendar">Plot</button>
           <button data-act="view" data-id="${rec.id}">View</button>
+          <button data-act="overwrite" data-id="${rec.id}" title="Replace this record with the current month's live data">Overwrite</button>
           <button data-act="delete" data-id="${rec.id}" title="Delete this record">Delete</button>
         </div>
       </div>
@@ -1031,6 +1181,24 @@ function renderRecords(){
       <div class="record-summary small">${recordSummary(rec)}</div>
       <pre class="record-json" data-id="${rec.id}" style="display:none;"></pre>`;
     host.appendChild(card);
+  });
+  host.querySelectorAll('button[data-act="plot"]').forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
+      if(!confirm(`Load "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) onto the live calendar?\n\nThis replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (this record itself is untouched either way).`)) return;
+      plotRecord(rec);
+    });
+  });
+  host.querySelectorAll('button[data-act="overwrite"]').forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
+      if(!confirm(`Overwrite the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) with what's currently live (${MONTHS[S.month]} ${S.year})? This replaces its saved staff, shift types, keep-apart pairs, leave, shifts and settings — the old snapshot can't be recovered.`)) return;
+      const fresh=snapshotNow(rec.label);
+      rec.label=fresh.label; rec.savedAt=fresh.savedAt; rec.year=fresh.year; rec.month=fresh.month; rec.data=fresh.data;
+      await persistRecords();
+      renderRecords();
+      setStatus(`Overwrote record "${rec.label}" (${recordSummary(rec)}).`);
+    });
   });
   host.querySelectorAll('button[data-act="delete"]').forEach(btn=>{
     btn.addEventListener("click", async ()=>{
