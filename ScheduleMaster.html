@@ -121,6 +121,8 @@ table{border-collapse:collapse;width:100%;font-size:12.5px;}
 th,td{border:1px solid var(--border);padding:5px 7px;text-align:left;}
 th{background:var(--bg);font-weight:600;}
 .top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:env(safe-area-inset-top,0px);z-index:5;}
+#loginOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:9999;padding:16px;}
+#loginOverlay input{padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);font-size:14px;}
 .top .spacer{flex:1;}
 .wrap{display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px;max-width:1500px;margin:0 auto;}
 @media(max-width:900px){.wrap{grid-template-columns:1fr;}}
@@ -181,7 +183,7 @@ table.workload td.ok{color:var(--ok);}
 .cs-slot button{flex:0 0 auto;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#paletteRow{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#paletteRow,#loginOverlay{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -220,6 +222,20 @@ table.workload td.ok{color:var(--ok);}
 </head>
 <body>
 
+<div id="loginOverlay">
+  <div class="panel" style="width:300px;">
+    <h2 style="margin-top:0;">Schedule Master</h2>
+    <div class="hint" style="margin-top:-6px;">Sign in to continue.</div>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:10px;">
+      <input type="text" id="loginUser" placeholder="Username" autocomplete="username">
+      <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
+      <button id="loginBtn" class="primary">Log in</button>
+    </div>
+    <div class="hint" id="loginError" style="color:var(--bad);min-height:14px;"></div>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
 <div class="top">
   <h1 style="margin:0">Schedule Master</h1>
   <select id="selMonth"></select>
@@ -236,6 +252,7 @@ table.workload td.ok{color:var(--ok);}
   <button id="btnImport">Import staff.json</button>
   <input type="file" id="fileImport" accept="application/json" style="display:none">
   <button id="btnResetAll" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all local data</button>
+  <button id="btnLogout" title="Sign out of Schedule Master">Log out</button>
 </div>
 
 <div class="wrap">
@@ -258,8 +275,9 @@ table.workload td.ok{color:var(--ok);}
     <select id="leavePerson"></select>
     <div class="row"><button id="leaveSelectAll">Select all</button><button id="leaveClearSel">Clear selection</button><button id="leaveAdd" class="primary">Save leave for this month</button></div>
     <div class="row"><button id="leaveClearPerson">Clear all leave for this person</button></div>
-    <div class="hint">Tick/untick days then click "Save leave for this month" — it now both adds and removes to match what's ticked. "Clear all leave for this person" wipes their leave record across every month.</div>
-    <div class="grid" id="leaveGrid" style="margin-top:6px;grid-template-columns:repeat(7,1fr);"></div>
+    <div class="hint">Click days below to select them, then click "Save leave for this month" — it now both adds and removes to match what's selected. "Clear all leave for this person" wipes their leave record across every month.</div>
+    <div class="grid" id="leaveWeekdayRow" style="margin-top:6px;"></div>
+    <div id="leaveCalGrid"></div>
     <div class="hint" style="margin-top:10px;">All leave currently saved, by person (click × to remove a date):</div>
     <div id="leaveList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
   </div>
@@ -355,6 +373,24 @@ table.workload td.ok{color:var(--ok);}
     <div class="row"><button id="csAddSlot">Add slot</button></div>
     <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
   </div>
+
+  <div class="panel" style="margin-top:14px;" id="emailPanel">
+    <h2>8 · Email</h2>
+    <div class="row">
+      <select id="emailPerson" style="flex:1"></select>
+      <input type="email" id="emailAddress" placeholder="name@example.com" style="flex:1">
+      <button id="emailSave" class="primary">Save</button>
+      <button id="emailDelete">Delete</button>
+    </div>
+    <div class="hint">Saves each person's address to <code>emails.json</code> on the server, kept separate from staff.json and records.json. Only available when running via <code>ScheduleMaster.py</code> — addresses can't be stored or sent from a browser-only session.</div>
+    <div id="emailList" style="display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:13px;"></div>
+    <div class="row" style="margin-top:12px;">
+      <button id="emailSend" class="primary" style="font-size:15px;padding:10px 22px;">Send this month's shifts to everyone</button>
+    </div>
+    <div class="hint">Emails each person their own dates and shift times for <span id="emailMonthLabel">—</span> — nobody sees anyone else's schedule. Each email includes a PDF and a calendar (.ics) file, colored to match whichever palette swatch is selected above right now. Sent through the mail relay configured at the top of <code>ScheduleMaster.py</code> (defaults to a local Postfix on the same machine, no login required).</div>
+    <div id="emailSendResult" class="hint"></div>
+  </div>
+</div>
 </div>
 </div>
 
@@ -362,6 +398,73 @@ table.workload td.ok{color:var(--ok);}
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
+
+// ---------- login (session-cookie auth against the local server) ----------
+// A global fetch wrapper rather than touching every individual api call: if the server ever answers
+// 401 (login required, or a session that's expired), pop the login overlay back up regardless of which
+// function made the request. Callers' own try/catch still run as before for their own fallback behavior
+// (e.g. dropping to browser-only mode on a genuine network error) — this only adds the re-login prompt.
+let AUTHED=false;
+const _fetch=window.fetch.bind(window);
+window.fetch=async function(...args){
+  const res=await _fetch(...args);
+  if(res.status===401 && AUTHED){ AUTHED=false; showLogin("Your session expired — please log in again."); }
+  return res;
+};
+function showLogin(msg){
+  $("appRoot").style.display="none";
+  $("loginOverlay").style.display="flex";
+  $("loginError").textContent=msg||"";
+  $("loginPass").value="";
+  $("loginUser").focus();
+}
+function showApp(){
+  $("loginOverlay").style.display="none";
+  $("appRoot").style.display="";
+}
+async function checkSession(){
+  try{
+    const res=await _fetch("api/session",{cache:"no-store"});
+    if(!res.ok) return false;
+    const d=await res.json();
+    return !!d.authenticated;
+  }catch(e){ return false; }
+}
+async function doLogin(){
+  const user=$("loginUser").value.trim(), pass=$("loginPass").value;
+  if(!pass){ $("loginError").textContent="Enter a password."; return; }
+  $("loginBtn").disabled=true; $("loginBtn").textContent="Signing in…";
+  try{
+    const res=await _fetch("api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});
+    if(res.status===429){ $("loginError").textContent="Too many attempts — wait a bit and try again."; return; }
+    if(!res.ok){ $("loginError").textContent="Wrong username or password."; return; }
+    AUTHED=true;
+    showApp();
+    await boot(true);
+  }catch(e){
+    $("loginError").textContent="Could not reach the server: "+e.message;
+  }finally{
+    $("loginBtn").disabled=false; $("loginBtn").textContent="Log in";
+  }
+}
+$("loginBtn").addEventListener("click",doLogin);
+$("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+$("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+$("btnLogout").addEventListener("click", async ()=>{
+  try{ await _fetch("api/logout",{method:"POST"}); }catch(e){}
+  AUTHED=false;
+  showLogin("");
+});
+async function boot(alreadyAuthed){
+  AUTHED = alreadyAuthed || await checkSession();
+  if(!AUTHED){ showLogin(""); return; }
+  showApp();
+  renderAll();
+  await tryServerLoad();
+  await tryServerLoadRecords();
+  await tryServerLoadEmails();
+}
+
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const CHIP_COLORS=[["var(--chip-1)","var(--chip-1-bg)"],["var(--chip-2)","var(--chip-2-bg)"],["var(--chip-3)","var(--chip-3-bg)"]];
 // each scheme's `inks` are just for the little swatch preview button; the actual colors live in the
@@ -588,19 +691,55 @@ function renderKeepApartUI(){
 }
 
 // ---------- leave ----------
+// A staged set of dates for the currently-picked person+month+year - lets you click days on/off,
+// same interaction as the Manual Plot mini calendar below, before committing with "Save leave for
+// this month". Re-derived from S.leave whenever the person, month, or year actually changes, but
+// left alone across incidental re-renders in between (mirrors mpSelected further down).
+let leaveStaged=new Set();
+let leaveStagedKey=null;
+function ensureLeaveStaged(){
+  const person=$("leavePerson").value;
+  const key=`${person}|${S.year}|${S.month}`;
+  if(leaveStagedKey!==key){
+    leaveStaged=new Set(person && S.leave[person] ? S.leave[person] : []);
+    leaveStagedKey=key;
+  }
+}
 function renderLeaveGrid(){
-  const grid=$("leaveGrid"); grid.innerHTML="";
+  ensureLeaveStaged();
+  const person=$("leavePerson").value;
+  $("leaveWeekdayRow").innerHTML=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="mpwd">${w}</div>`).join("");
+  const host=$("leaveCalGrid"); host.innerHTML="";
+  const grid=document.createElement("div"); grid.className="mpgrid";
+  const firstWd=weekdayOf(S.year,S.month,1);
   const n=daysInMonth(S.year,S.month);
+  for(let i=0;i<firstWd;i++){ const blank=document.createElement("div"); blank.className="mpday empty"; grid.appendChild(blank); }
   for(let d=1; d<=n; d++){
     const ds=ymd(S.year,S.month,d);
-    const cell=document.createElement("label");
-    cell.style.cssText="border:1px solid var(--border);border-radius:6px;padding:4px;text-align:center;font-size:11px;cursor:pointer;";
-    const person=$("leavePerson").value;
-    const checked=person && isOnLeave(person,ds);
-    if(checked) cell.style.background="var(--leave-bg)";
-    cell.innerHTML=`<input type="checkbox" data-d="${ds}" style="display:block;margin:0 auto 2px" ${checked?"checked":""}>${d}`;
+    const weekend=isWeekend(S.year,S.month,d);
+    const selected=leaveStaged.has(ds);
+    const existing=person && personShift(ds,person);
+    const cell=document.createElement("div");
+    cell.className="mpday"+(weekend?" weekend":"")+(selected?" selected":"");
+    let tag="";
+    if(selected){
+      tag=`<span class="mptag" style="background:var(--leave-bg);color:var(--leave)">Leave</span>`;
+    } else if(existing){
+      const idx=S.shiftTypes.findIndex(t=>t.id===existing);
+      const t=shiftById(existing);
+      const [ink,bg]=CHIP_COLORS[idx%3];
+      cell.title=`${person} already has ${t.name} on ${ds} — selecting Leave here will clear it.`;
+      tag=`<span class="mptag" style="background:${bg};color:${ink}">${t.name}</span>`;
+    }
+    cell.innerHTML=`<div class="mpdaynum">${d}</div>${tag}`;
+    cell.addEventListener("click",()=>{
+      if(leaveStaged.has(ds)) leaveStaged.delete(ds); else leaveStaged.add(ds);
+      renderLeaveGrid();
+    });
     grid.appendChild(cell);
   }
+  while(grid.children.length%7!==0){ const blank=document.createElement("div"); blank.className="mpday empty"; grid.appendChild(blank); }
+  host.appendChild(grid);
   renderLeaveList();
 }
 function renderLeaveList(){
@@ -652,15 +791,22 @@ function toDateRanges(dates){
 }
 function fmtShort(ds){ const [y,m,d]=ds.split("-").map(Number); return `${d} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m-1]}`; }
 $("leavePerson").addEventListener("change",renderLeaveGrid);
-$("leaveSelectAll").addEventListener("click",()=>{ $("leaveGrid").querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=true); });
-$("leaveClearSel").addEventListener("click",()=>{ $("leaveGrid").querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=false); });
+$("leaveSelectAll").addEventListener("click",()=>{
+  ensureLeaveStaged();
+  const n=daysInMonth(S.year,S.month);
+  for(let d=1; d<=n; d++) leaveStaged.add(ymd(S.year,S.month,d));
+  renderLeaveGrid();
+});
+$("leaveClearSel").addEventListener("click",()=>{ ensureLeaveStaged(); leaveStaged.clear(); renderLeaveGrid(); });
 $("leaveAdd").addEventListener("click",()=>{
   const person=$("leavePerson").value; if(!person){ setStatus("Pick a person first."); return; }
-  const boxes=[...$("leaveGrid").querySelectorAll("input[type=checkbox]")];
-  const checkedDates=boxes.filter(c=>c.checked).map(c=>c.dataset.d);
-  const uncheckedDates=boxes.filter(c=>!c.checked).map(c=>c.dataset.d);
+  ensureLeaveStaged();
+  const n=daysInMonth(S.year,S.month);
+  const allDates=[]; for(let d=1; d<=n; d++) allDates.push(ymd(S.year,S.month,d));
+  const checkedDates=allDates.filter(ds=>leaveStaged.has(ds));
+  const uncheckedDates=allDates.filter(ds=>!leaveStaged.has(ds));
   if(!S.leave[person]) S.leave[person]=[];
-  // an unticked day that was previously on leave is now REMOVED (this used to only ever add, never remove)
+  // a day no longer selected that was previously on leave is now REMOVED (this used to only ever add, never remove)
   S.leave[person]=S.leave[person].filter(ds=>!uncheckedDates.includes(ds));
   checkedDates.forEach(ds=>{
     if(!S.leave[person].includes(ds)) S.leave[person].push(ds);
@@ -678,6 +824,7 @@ $("leaveAdd").addEventListener("click",()=>{
     }
   }
   S.leave[person].sort();
+  leaveStagedKey=null; // re-derive from the saved state (including the auto-added weekends) next render
   save(); setStatus(`Saved leave for ${person} this month: ${checkedDates.length} day(s) on leave.`); renderAll();
 });
 $("leaveClearPerson").addEventListener("click",()=>{
@@ -685,6 +832,7 @@ $("leaveClearPerson").addEventListener("click",()=>{
   if(!S.leave[person] || !S.leave[person].length){ setStatus(`${person} has no leave recorded.`); return; }
   if(!confirm(`Remove ALL recorded leave for ${person}, across every month? This can't be undone.`)) return;
   delete S.leave[person];
+  leaveStagedKey=null;
   save(); setStatus(`Cleared all leave for ${person}.`); renderAll();
 });
 
@@ -1021,7 +1169,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage();
+  fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -1651,9 +1799,135 @@ $("btnAuto").addEventListener("click",()=>{
   setTimeout(autoPlot,10);
 });
 
-renderAll();
-tryServerLoad();
-tryServerLoadRecords();
+// ---------- email addresses (emails.json) + sending this month's shifts ----------
+const EMAILS_API="api/emails";
+const SEND_API="api/send-shifts";
+let EMAILS={};
+let emailsServerMode=false;
+
+function loadEmailsLocal(){
+  try{ const raw=localStorage.getItem("schedulemaster_emails"); if(raw){ const v=JSON.parse(raw); if(v&&typeof v==="object") return v; } }catch(e){}
+  return {};
+}
+function saveEmailsLocal(){ try{ localStorage.setItem("schedulemaster_emails", JSON.stringify(EMAILS)); }catch(e){} }
+
+async function tryServerLoadEmails(){
+  try{
+    const res=await fetch(EMAILS_API,{cache:"no-store"});
+    if(!res.ok) throw new Error("server responded "+res.status);
+    const data=await res.json();
+    if(!data.emails||typeof data.emails!=="object") throw new Error("emails.json is not in the expected {\"emails\":{...}} form");
+    EMAILS=data.emails;
+    emailsServerMode=true;
+  }catch(e){
+    emailsServerMode=false;
+    EMAILS=loadEmailsLocal();
+  }
+  renderEmailPanel();
+}
+async function persistEmails(){
+  if(emailsServerMode){
+    try{
+      const res=await fetch(EMAILS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({emails:EMAILS})});
+      if(!res.ok) throw new Error("server responded "+res.status);
+    }catch(e){ setStatus("Could not save emails to the local server: "+e.message); }
+  } else {
+    saveEmailsLocal();
+  }
+}
+
+function renderEmailPanel(){
+  $("emailMonthLabel").textContent=`${MONTHS[S.month]} ${S.year}`;
+  const sel=$("emailPerson");
+  const prev=sel.value;
+  sel.innerHTML=S.staff.map(n=>`<option value="${n}">${n}</option>`).join("");
+  if(S.staff.includes(prev)) sel.value=prev;
+  if(sel.value && EMAILS[sel.value]) $("emailAddress").value=EMAILS[sel.value];
+  else if(!prev) $("emailAddress").value="";
+
+  const host=$("emailList"); host.innerHTML="";
+  const names=Object.keys(EMAILS).sort((a,b)=>a.localeCompare(b));
+  if(!names.length){
+    host.innerHTML=`<div class="small">No addresses saved yet.</div>`;
+  } else {
+    names.forEach(name=>{
+      const row=document.createElement("div");
+      row.className="row"; row.style.margin="0"; row.style.gap="6px"; row.style.alignItems="center";
+      const onFile=S.staff.includes(name);
+      row.innerHTML=`<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}">${name}</span><span class="small" style="flex:2;">${EMAILS[name]}</span><button data-name="${name}" title="Remove this address">✕</button>`;
+      row.querySelector("button").addEventListener("click", async ()=>{
+        delete EMAILS[name]; await persistEmails(); renderEmailPanel();
+      });
+      host.appendChild(row);
+    });
+  }
+  $("emailSend").disabled=!emailsServerMode;
+  $("emailSend").title=emailsServerMode?"":"Sending needs ScheduleMaster.py running as your local server — it's the part that actually talks to your mail relay.";
+}
+$("emailPerson").addEventListener("change",()=>{
+  const n=$("emailPerson").value;
+  $("emailAddress").value=EMAILS[n]||"";
+});
+$("emailSave").addEventListener("click", async ()=>{
+  const name=$("emailPerson").value;
+  const addr=$("emailAddress").value.trim();
+  if(!name){ setStatus("Pick a person first."); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)){ setStatus("That doesn't look like a valid email address."); return; }
+  EMAILS[name]=addr;
+  await persistEmails();
+  renderEmailPanel();
+  setStatus(`Saved an address for ${name}.`);
+});
+$("emailDelete").addEventListener("click", async ()=>{
+  const name=$("emailPerson").value;
+  if(!name||!EMAILS[name]){ setStatus("That person doesn't have a saved address."); return; }
+  delete EMAILS[name];
+  await persistEmails();
+  renderEmailPanel();
+  setStatus(`Removed the saved address for ${name}.`);
+});
+$("emailSend").addEventListener("click", async ()=>{
+  if(!emailsServerMode) return;
+  const names=Object.keys(EMAILS);
+  if(!names.length){ setStatus("No saved addresses to send to."); return; }
+  const monthLabel=`${MONTHS[S.month]} ${S.year}`;
+  const paletteName=(PALETTES.find(p=>p.id===(S.palette||"classic"))||{}).name||"Classic";
+  if(!confirm(`Email each person their own shifts for ${monthLabel}?\n\nThis sends ${names.length} separate email(s), one per saved address, through the mail relay configured in ScheduleMaster.py. Each person only sees their own dates, and each gets a PDF and a calendar (.ics) file attached, colored to match the "${paletteName}" scheme that's active right now.`)) return;
+  const monthShifts={};
+  for(const d in S.shifts){
+    const [yy,mm]=d.split("-").map(Number);
+    if(yy===S.year && mm-1===S.month) monthShifts[d]=S.shifts[d];
+  }
+  const monthLeave={};
+  for(const name in S.leave){
+    const dates=(S.leave[name]||[]).filter(d=>{ const [yy,mm]=d.split("-").map(Number); return yy===S.year && mm-1===S.month; });
+    if(dates.length) monthLeave[name]=dates;
+  }
+  $("emailSend").disabled=true; $("emailSend").textContent="Sending…";
+  $("emailSendResult").textContent="";
+  try{
+    const res=await fetch(SEND_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      year:S.year, month:S.month, monthLabel,
+      shiftTypes:S.shiftTypes, shifts:monthShifts, leave:monthLeave,
+      palette:S.palette||"classic"
+    })});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||("server responded "+res.status));
+    const parts=[];
+    if(data.sent&&data.sent.length) parts.push(`Sent to ${data.sent.length}: ${data.sent.join(", ")}.`);
+    if(data.skipped&&data.skipped.length) parts.push(`Skipped ${data.skipped.length}: `+data.skipped.map(s=>`${s.name} (${s.reason})`).join(", ")+".");
+    if(data.failed&&data.failed.length) parts.push(`Failed ${data.failed.length}: `+data.failed.map(s=>`${s.name} (${s.error})`).join(", ")+".");
+    $("emailSendResult").textContent=parts.join(" ") || "Nothing to send.";
+    setStatus(`Sent ${monthLabel} shifts — ${data.sent?data.sent.length:0} email(s) went out.`);
+  }catch(e){
+    $("emailSendResult").textContent="Send failed: "+e.message;
+    setStatus("Could not send emails: "+e.message);
+  } finally {
+    $("emailSend").disabled=!emailsServerMode; $("emailSend").textContent="Send this month's shifts to everyone";
+  }
+});
+
+boot();
 })();
 </script>
 </body>
