@@ -45,6 +45,7 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
 - **Lockout**: 5 wrong attempts in a row from the same address locks it out for 15 minutes.
 - Signing out (the **Log out** button) clears the session immediately.
 - This gate covers the whole app and every `/api/*` route except `/api/ping` and `/api/session` themselves (which is how the page knows whether to show the sign-in screen in the first place).
+- The server serves exactly one static file, `ScheduleMaster.html`. Everything else in its folder — `login.json`, `staff.json`, `records.json`, `emails.json`, the script itself — returns 404 when requested directly; that data is only reachable through the signed-in `/api/*` routes. (Earlier versions served any file in the folder without a session, including `login.json`: if you ran one of those somewhere others could reach, change the password.)
 
 ---
 
@@ -91,8 +92,8 @@ Everything lives in a single in-memory state object, `S`, saved to `localStorage
 A row of swatch buttons next to the calendar switches between 10 color schemes: **Classic** (the default), **Ocean**, **Sunset**, **Forest**, **Berry**, **Slate**, **Deep**, **Deep Bold**, **Deep Emerald**, and **Deep Crimson**. The choice is purely cosmetic — it never affects rules or planning — and is saved per browser (in `S.palette`, `localStorage`), not shared between people.
 
 - Whichever shift type sits at position 1, 4, 7… in the shift-types list gets the scheme's first color; position 2, 5, 8… gets the second; position 3, 6, 9… gets the third. Leave always gets the scheme's own dedicated color, separate from the three shift-type colors.
-- **On screen**, all 10 schemes show their own distinct pastel or bold tones.
-- **On paper** — both the printed calendar (§7) and the emailed PDF (§10) — the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) are all flattened to one fixed, high-contrast set instead of their on-screen pastel tones, because pale tints wash out badly once printed. The four "deep" schemes are already saturated enough to survive printing, so they print and PDF exactly as chosen on screen. Practically: pick any of the first six for a nice look on a monitor, or one of the "deep" four if you specifically want the printed/emailed version to look distinct from the others.
+- **On screen**, all 10 schemes show their own distinct pastel or bold tones — and so does **everything in the shift email** (§10), both the message body and the attached PDF: they use exactly the same colors as the app's calendar for whichever scheme was active when you clicked Send, pastel schemes included.
+- **The Print / PDF button** (§7) is the one exception: there, the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) are all flattened to one fixed, high-contrast set instead of their on-screen pastel tones, because pale tints wash out badly once printed. The four "deep" schemes are already saturated enough to survive printing, so they print exactly as chosen on screen. The emailed PDF does *not* do this flattening — it always reproduces the chosen scheme exactly — so if a recipient prints it, a pastel scheme will print paler than the app's own printout; pick a "deep" scheme before sending if people will mostly print it.
 
 ---
 
@@ -106,7 +107,8 @@ A row of swatch buttons next to the calendar switches between 10 color schemes: 
 6. **Quota** — each person's total shifts for the month should not exceed `expShifts` minus their leave days that month (weekend leave days are excluded from the deduction if "Weekend leave doesn't reduce expected shifts" is on).
 7. **Shift-type variety** — if "Every person needs every shift type" is on, someone who worked at all that month should get at least one of each shift type, not just one.
 8. **Leave blocks shifts** — a person on leave can never be placed that day; saving leave immediately clears any shift already on those dates.
-9. **Weekend leave auto-fill** — if leave spans a weekend (leave either side of Saturday/Sunday), the weekend itself is automatically added as leave too.
+9. **Weekend leave auto-fill** — if leave spans a weekend (leave directly either side of Saturday/Sunday — e.g. Friday + Monday, or Friday + Sunday), the weekend day(s) in between are automatically added as leave too.
+   Only a gap made up entirely of weekend days is filled; two leave dates further apart (say the 1st and the 28th) leave the weekends between them alone. (Earlier versions filled every weekend between any two leave dates — leave saved with those versions may contain extra weekend days; review it in the Leave panel.)
 10. **Compulsory starters** — up to 4 named people can be forced onto a chosen shift on day 1 of the month; Auto Plot seeds them in before minimum cover runs, so they count toward it automatically, then they're treated as ordinary people for the rest of the month (see §9).
 
 ---
@@ -244,13 +246,16 @@ Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so
 
 - **Server-backed** (shared across everyone who signs in, read/written straight to disk next to `ScheduleMaster.py`): `staff.json` (`GET`/`PUT api/staff`), `records.json` (`GET`/`PUT api/records`, §8), `emails.json` (`GET`/`PUT api/emails`, §10), and `login.json` (credentials only, §*Login & access*).
 - **Browser-only** (this device/browser only, never sent to the server except when you explicitly send shifts by email): the current month's `shifts`, `leave`, planning settings, and the selected color `palette` — saved to `localStorage` under the key `schedulemaster_state` (auto-migrated once from the old key `planthat_state` if found).
+- **Staff edits** (add, remove, import) change the list in this browser straight away but only reach `staff.json` when you click **Save**; the status line says so after each edit. **Reload** — and the next page load — replace the list with the server's copy, so Reload now asks first if there are unsaved staff edits.
 - **Reset all local data** wipes shifts, leave, and settings from *this browser only* — it does not touch `staff.json`, `records.json`, `emails.json`, or `login.json` on disk.
 
 ---
 
 ## 7. Printing
 
-Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. As covered in *Color schemes* above, a separate, more saturated set of colors is swapped in for print for the six pastel schemes so shift colors don't wash out on paper — the "deep" schemes print as chosen. The emailed PDF (§10) follows this exact same rule.
+Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. As covered in *Color schemes* above, a separate, more saturated set of colors is swapped in for print for the six pastel schemes so shift colors don't wash out on paper — the "deep" schemes print as chosen. The emailed PDF (§10) does not follow this rule — it keeps the chosen scheme's exact colors (see *Color schemes*).
+
+The Email panel (with everyone's saved addresses) is never printed, just like the Saved records and Compulsory starters panels.
 
 ---
 
@@ -288,9 +293,10 @@ The **Email** panel (§8 on screen) lets you save one address per person and, wi
 - **Saved addresses** live in `emails.json` on the server (`GET`/`PUT api/emails`), separate from `staff.json` and `records.json`. Saving and sending both require `ScheduleMaster.py` to be running — the panel disables the Send button (with an explanatory tooltip) if it can't reach the server.
 - **Send this month's shifts to everyone** asks for confirmation (naming how many emails will go out and which color scheme they'll be colored with), then sends one individual email per saved address through the SMTP relay configured in `ScheduleMaster.py` (`SMTP_HOST`/`SMTP_PORT`/etc. near the top of the file — defaults to a local Postfix relay on the same machine, no login required).
 - **Each email contains three things:**
-  1. A plain-text list of that person's dates and shifts for the month.
+  1. The message itself: a month calendar grid plus a dated list of that person's shifts, colored with the active scheme's on-screen colors (see *Color schemes*), with a plain-text version for mail apps that don't show formatted email.
   2. A one-page **PDF month calendar** for that person — a Sun–Sat grid (the same layout as the on-screen/printed calendar, not a plain list), with a shift-count summary and legend, colored using whichever calendar scheme was active in the browser when you clicked Send — see *Color schemes* above for exactly how a scheme's colors carry over.
   3. A **calendar file (`.ics`)** the recipient can import into their phone or calendar app — one event per shift (correctly spanning midnight for overnight shifts like the default Night shift) plus an all-day event for each day of leave.
+     Times are "floating" local times — the same wall-clock hours shown in the app — so they land at those hours on the recipient's calendar whatever its time zone setting. Each event's ID is fixed per person + date, so importing a re-sent month updates that day's event instead of adding a duplicate (most calendar apps; a few simply re-import). A shift type whose start/end time can't be read is added as an all-day event rather than failing the send.
 - **Both attachments are named after the recipient**, not a generic filename — `Shifts_YYYY-MM_Full Name.pdf` / `.ics` (e.g. `Shifts_2026-09_Dzidula Gati.pdf`).
 - **After sending**, the panel reports how many emails were sent, and lists anyone **skipped** (no valid-looking email address on file) or **failed** (the relay rejected or couldn't be reached), each with a reason.
 - The PDF is generated with a small dependency-free writer built into `ScheduleMaster.py` itself — no `reportlab` or other third-party package required, consistent with the rest of the app.

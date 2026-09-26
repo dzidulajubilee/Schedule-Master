@@ -15,16 +15,12 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
                         for one month. Body: {"year":2026,"month":8,"monthLabel":"September 2026",
                         "shiftTypes":[{"id":...,"name":...,"start":...,"end":...}, ...],
                         "shifts":{"YYYY-MM-DD":{"Full Name":"shiftTypeId", ...}, ...},
-                        "leave":{"Full Name":["YYYY-MM-DD", ...], ...},
-                        "palette":"ocean"}. "palette" is whichever calendar color scheme is active
-                        on screen when Send is clicked (see PALETTE_COLORS below) - it decides the
-                        colors used in the attached PDF, the same way it decides what's on screen.
-                        Sends one individual email per saved address (nobody sees anyone else's
-                        schedule) through the SMTP relay configured below. Each email carries the
-                        schedule as plain text plus two attachments: a one-page PDF (colored to
-                        match the active scheme) and a .ics calendar file the person can import.
-                        Returns {"sent":[names], "skipped":[{"name":...,"reason":...}],
-                        "failed":[{"name":...,"error":...}]}.
+                        "leave":{"Full Name":["YYYY-MM-DD", ...], ...}, "palette":"classic"}. Sends one individual
+                        email per saved address (nobody sees anyone else's schedule) through the
+                        SMTP relay configured below - plain text + HTML body, plus two attachments named
+                        Shifts_YYYY-MM_<Full Name>.pdf (one-page month calendar, colored per "palette",
+                        see SCREEN_PALETTES) and .ics (importable calendar) - and returns {"sent":[names],
+                        "skipped":[{"name":...,"reason":...}], "failed":[{"name":...,"error":...}]}.
 
   GET  /api/session  -> {"authenticated": true/false} for the current browser (checks the session
                         cookie). Never requires auth itself — it's how the page decides whether to
@@ -42,10 +38,11 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
   always load the app shell and show the login screen; only the data behind it is protected.
 
 No third-party packages required (standard library only).
-Run this file (or double-click Start ScheduleMaster.bat), then a browser tab opens
+Run this file (python3 ScheduleMaster.py), then a browser tab opens
 automatically at ScheduleMaster.html. Default login is admin / admin — see login.json.
 """
 import calendar
+import hmac
 import http.cookies
 import http.server
 import json
@@ -54,15 +51,16 @@ import re
 import secrets
 import smtplib
 import socket
+import ssl
 import sys
 import threading
 import time
+import urllib.parse
 import webbrowser
-from datetime import date, datetime, timedelta
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr
+from datetime import date
+from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
+from html import escape
 
 FOLDER = os.path.dirname(os.path.abspath(__file__))
 STAFF_FILE = os.path.join(FOLDER, "staff.json")
@@ -96,309 +94,33 @@ SMTP_USERNAME = None
 SMTP_PASSWORD = None
 SMTP_USE_TLS = False
 
-def _safe_filename_part(s):
-    s = re.sub(r'[\\/:*?"<>|]+', "_", str(s)).strip(" ._")
-    return s or "person"
-
-
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
-# ---------- calendar color schemes, mirrored from ScheduleMaster.html ----------
-# The page itself already solves "which colors survive being put on paper": its @media print rule
-# flattens every pastel, on-screen-only scheme (classic/ocean/sunset/forest/berry/slate) to one
-# fixed, high-contrast set, because pale on-screen tints wash out once printed - while the "deep"
-# family is already saturated enough to print exactly as chosen. An emailed PDF is paper too, so
-# the same rule is reused here rather than inventing a second color story: whichever scheme is
-# active in the browser decides which of these two cases applies, but a pastel scheme's own hue
-# never appears in the PDF - only the deep family's hues do. chip1/chip2/chip3 line up with a shift
-# type's position in shiftTypes (index % 3), exactly as the on-screen legend does.
-_PRINT_SAFE = {"chip1": ("#0d3fb0", "#b9cdf7"), "chip2": ("#8a4400", "#f0c98a"),
-               "chip3": ("#3a1f99", "#cabdf0"), "leave": ("#8f1710", "#f2b3ac")}
-PALETTE_COLORS = {
-    "classic": _PRINT_SAFE, "ocean": _PRINT_SAFE, "sunset": _PRINT_SAFE,
-    "forest": _PRINT_SAFE, "berry": _PRINT_SAFE, "slate": _PRINT_SAFE,
-    "deep": {"chip1": ("#eaf2ff", "#123a66"), "chip2": ("#fff2df", "#7a4416"),
-             "chip3": ("#f5ecff", "#4a2170"), "leave": ("#ffffff", "#e8514f")},
-    "deep-bold": {"chip1": ("#ffffff", "#3b76e8"), "chip2": ("#000000", "#e8960b"),
-                  "chip3": ("#ffffff", "#16a34a"), "leave": ("#ffffff", "#e8514f")},
-    "deep-emerald": {"chip1": ("#e9fff5", "#0f5c42"), "chip2": ("#ffe9f7", "#7a1a56"),
-                      "chip3": ("#eef0ff", "#2c2f7a"), "leave": ("#ffffff", "#e8514f")},
-    "deep-crimson": {"chip1": ("#ffeef0", "#8c1e2b"), "chip2": ("#fff5e6", "#7a4a0f"),
-                      "chip3": ("#eaf2ff", "#1f3a5f"), "leave": ("#ffffff", "#e8514f")},
+# ---------- shift-schedule email content ----------
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+          "September", "October", "November", "December"]
+DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+FONT = "Arial,Helvetica,sans-serif"
+# ---------- email colors (message body AND attached PDF), per calendar color scheme ----------
+# Both use each scheme's exact ON-SCREEN colors - the same chips the person sees in the app's calendar
+# (light mode). Unlike the app's own Print button, the emailed PDF does NOT swap the pastel schemes for
+# the fixed print-safe set: the chosen scheme is reproduced exactly. Each entry: [chip-1, chip-2, chip-3, leave], each a
+# (background, text) pair, copied from the matching :root / :root[data-palette=...] CSS in
+# ScheduleMaster.html - if a scheme's colors change there, change them here too. Shift types cycle through
+# chip-1/2/3 by position (1,4,7.. / 2,5,8.. / 3,6,9..) exactly like the app; Leave has its own color.
+SCREEN_PALETTES = {
+    "classic": [("#e6edfd", "#2e6fec"), ("#fbeadb", "#c9781a"), ("#ece8fb", "#6a52d6"), ("#fbe6e3", "#c94a3f")],
+    "ocean": [("#dcf3f6", "#0f7a8c"), ("#dde8fb", "#1f4e8c"), ("#dbe9e9", "#3c6e71"), ("#f8ded9", "#b23a2e")],
+    "sunset": [("#fbe0e4", "#d1495b"), ("#fbeedc", "#e08e2b"), ("#f0e3fb", "#8a4fc9"), ("#f5dbd8", "#a3271f")],
+    "forest": [("#dff0e2", "#2f6b3a"), ("#f0e8d4", "#8a6a2f"), ("#dcefef", "#2f6b6b"), ("#f8ded9", "#b23b2e")],
+    "berry": [("#f9dde9", "#a3245e"), ("#e9e2fb", "#5b3fa0"), ("#dde8fb", "#1f4e8c"), ("#f2c9c4", "#8f1710")],
+    "slate": [("#dbe8f4", "#2f5d8c"), ("#f0e6d8", "#8a5a2f"), ("#dcefe9", "#3f7d72"), ("#f6ddd8", "#a3392e")],
+    "deep": [("#123a66", "#eaf2ff"), ("#7a4416", "#fff2df"), ("#4a2170", "#f5ecff"), ("#e8514f", "#ffffff")],
+    "deep-bold": [("#3b76e8", "#ffffff"), ("#e8960b", "#000000"), ("#16a34a", "#ffffff"), ("#e8514f", "#ffffff")],
+    "deep-emerald": [("#0f5c42", "#e9fff5"), ("#7a1a56", "#ffe9f7"), ("#2c2f7a", "#eef0ff"), ("#e8514f", "#ffffff")],
+    "deep-crimson": [("#8c1e2b", "#ffeef0"), ("#7a4a0f", "#fff5e6"), ("#1f3a5f", "#eaf2ff"), ("#e8514f", "#ffffff")],
 }
 
-
-def palette_colors_for(palette_id):
-    return PALETTE_COLORS.get(palette_id, PALETTE_COLORS["classic"])
-
-
-def person_entries(name, shift_types, shifts, leave):
-    """(date_str, weekday_abbr, label, color_key) rows for one person, sorted by date.
-    color_key is "chip1"/"chip2"/"chip3" (shift_types index % 3, same rule as the on-screen
-    legend) or "leave" - used to pick a color and, for the PDF, to look it up in PALETTE_COLORS."""
-    index_by_id = {t["id"]: i for i, t in enumerate(shift_types)}
-    by_id = {t["id"]: t for t in shift_types}
-    entries = []
-    for ds, day_shifts in shifts.items():
-        shift_id = day_shifts.get(name)
-        if not shift_id:
-            continue
-        t = by_id.get(shift_id)
-        label = f"{t['name']} ({t['start']}\u2013{t['end']})" if t else shift_id
-        color_key = f"chip{(index_by_id.get(shift_id, 0) % 3) + 1}"
-        entries.append((ds, label, color_key, t))
-    for ds in leave.get(name, []):
-        entries.append((ds, "Leave", "leave", None))
-    entries.sort(key=lambda e: e[0])
-    out = []
-    for ds, label, color_key, t in entries:
-        y, m, d = (int(x) for x in ds.split("-"))
-        weekday = date(y, m, d).strftime("%a")
-        out.append((ds, weekday, label, color_key, t))
-    return out
-
-
-# ---------- minimal, dependency-free PDF writer ----------
-# Just enough of the PDF spec (uncompressed content streams, core Helvetica font, a manual xref
-# table) to lay out a colored one-page-or-more schedule - no reportlab or other third-party
-# package needed, matching the "standard library only" promise at the top of this file.
-_PDF_PAGE_W, _PDF_PAGE_H = 842, 595  # A4 landscape, points - room for 7 calendar columns
-_PDF_MARGIN = 42
-
-
-def _pdf_escape(s):
-    return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _pdf_text_bytes(s):
-    # core fonts only support single-byte encodings; WinAnsiEncoding (~cp1252) covers the en/em
-    # dashes this file uses. Anything further outside it (e.g. an unusual name) is dropped rather
-    # than corrupting the PDF.
-    return s.encode("cp1252", "replace")
-
-
-def _hex_rgb01(h):
-    h = h.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
-
-
-class _SimplePDF:
-    def __init__(self):
-        self.pages = []  # list of content-stream strings, one per page
-
-    def new_page(self):
-        self.pages.append([])
-        return self.pages[-1]
-
-    @staticmethod
-    def _line(ops, cmd):
-        ops.append(cmd)
-
-    def rect(self, ops, x, y, w, h, hex_bg):
-        r, g, b = _hex_rgb01(hex_bg)
-        self._line(ops, f"{r:.3f} {g:.3f} {b:.3f} rg {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f")
-
-    def rect_stroke(self, ops, x, y, w, h, hex_line, width=0.6):
-        r, g, b = _hex_rgb01(hex_line)
-        self._line(ops, f"{width} w {r:.3f} {g:.3f} {b:.3f} RG {x:.2f} {y:.2f} {w:.2f} {h:.2f} re S")
-
-    def text(self, ops, x, y, size, hex_ink, s, bold=False):
-        r, g, b = _hex_rgb01(hex_ink)
-        font = "/F2" if bold else "/F1"
-        raw = _pdf_text_bytes(_pdf_escape(s)).decode("latin-1")
-        self._line(ops, f"{r:.3f} {g:.3f} {b:.3f} rg BT {font} {size} Tf {x:.2f} {y:.2f} Td ({raw}) Tj ET")
-
-    def text_centered(self, ops, cx, y, size, hex_ink, s, bold=False):
-        """Core Helvetica isn't monospace, but a flat per-character average (a touch wider for
-        the bold face) centers short labels - day names, pill captions - closely enough."""
-        avg = size * (0.62 if bold else 0.56)
-        self.text(ops, cx - (avg * len(s)) / 2, y, size, hex_ink, s, bold=bold)
-
-    def build(self):
-        n_pages = len(self.pages) or 1
-        font_regular, font_bold = 3, 4
-        first_page_obj = 5
-        first_content_obj = first_page_obj + n_pages
-        objects = {
-            1: "<< /Type /Catalog /Pages 2 0 R >>",
-            2: "<< /Type /Pages /Kids [%s] /Count %d >>" % (
-                " ".join(f"{first_page_obj + i} 0 R" for i in range(n_pages)), n_pages),
-            font_regular: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
-            font_bold: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
-        }
-        for i in range(n_pages):
-            objects[first_page_obj + i] = (
-                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {_PDF_PAGE_W} {_PDF_PAGE_H}] "
-                f"/Resources << /Font << /F1 {font_regular} 0 R /F2 {font_bold} 0 R >> >> "
-                f"/Contents {first_content_obj + i} 0 R >>"
-            )
-        for i, ops in enumerate(self.pages or [[]]):
-            stream = "\n".join(ops)
-            data = stream.encode("latin-1", "replace")
-            objects[first_content_obj + i] = f"<< /Length {len(data)} >>\nstream\n{stream}\nendstream"
-        out = bytearray(b"%PDF-1.4\n")
-        offsets = {}
-        max_obj = max(objects)
-        for num in range(1, max_obj + 1):
-            offsets[num] = len(out)
-            out += f"{num} 0 obj\n{objects.get(num, '<< >>')}\nendobj\n".encode("latin-1", "replace")
-        xref_at = len(out)
-        out += f"xref\n0 {max_obj + 1}\n".encode()
-        out += b"0000000000 65535 f \n"
-        for num in range(1, max_obj + 1):
-            out += f"{offsets[num]:010d} 00000 n \n".encode()
-        out += f"trailer\n<< /Size {max_obj + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF".encode()
-        return bytes(out)
-
-
-_PDF_BANNER = "#17324d"      # neutral chrome, not tied to any color scheme - like a folder cover
-_PDF_BANNER_SUBTLE = "#dbe4ee"
-_PDF_OFF_BG = "#faf7f0"
-_PDF_GRID_LINE = "#dedad2"
-_PDF_INK = "#221f1a"
-_PDF_MUTED = "#726d63"
-_WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-
-
-def build_shift_pdf(name, year, month0, month_label, shift_types, shifts, leave, palette_id):
-    """A one-page month grid, laid out the way Schedule Master's own on-screen/printed calendar
-    is laid out (and the way a monthly shift calendar reads generally) - a banner with the month
-    and the person's name, a shift-count summary, a legend, then a 7-column Sun-Sat grid with one
-    cell per day. Colors still come from PALETTE_COLORS (the active on-screen scheme governs shift
-    and leave colors, per the print-safe rule); the banner itself is a fixed neutral navy, since
-    it's page chrome rather than a shift indicator."""
-    colors = palette_colors_for(palette_id)
-    month = month0 + 1
-    by_id = {t["id"]: t for t in shift_types}
-    index_by_id = {t["id"]: i for i, t in enumerate(shift_types)}
-    days_in_month = calendar.monthrange(year, month)[1]
-    first_dow = (date(year, month, 1).weekday() + 1) % 7  # Sun=0 .. Sat=6
-    weeks = -(-(first_dow + days_in_month) // 7)  # ceil
-
-    day_status = {}  # day -> ("shift", shift_id) | ("leave", None) | ("off", None)
-    counts = {}      # shift_id -> count, in shift_types order
-    for d in range(1, days_in_month + 1):
-        ds = f"{year:04d}-{month:02d}-{d:02d}"
-        shift_id = shifts.get(ds, {}).get(name)
-        if shift_id and shift_id in by_id:
-            day_status[d] = ("shift", shift_id)
-            counts[shift_id] = counts.get(shift_id, 0) + 1
-        elif ds in leave.get(name, []):
-            day_status[d] = ("leave", None)
-        else:
-            day_status[d] = ("off", None)
-
-    pdf = _SimplePDF()
-    ops = pdf.new_page()
-
-    # ---- banner ----
-    banner_h = 68
-    pdf.rect(ops, 0, _PDF_PAGE_H - banner_h, _PDF_PAGE_W, banner_h, _PDF_BANNER)
-    pdf.text(ops, _PDF_MARGIN, _PDF_PAGE_H - 30, 19, "#ffffff", f"{month_label} Shift Calendar", bold=True)
-    pdf.text(ops, _PDF_MARGIN, _PDF_PAGE_H - 50, 12, _PDF_BANNER_SUBTLE, name)
-
-    # ---- summary line ----
-    total_shifts = sum(counts.values())
-    count_bits = [f"{counts[t['id']]} {t['name']}" for t in shift_types if counts.get(t["id"])]
-    summary = f"{total_shifts} shift(s): " + ", ".join(count_bits) if count_bits else "No shifts scheduled"
-    y = _PDF_PAGE_H - banner_h - 24
-    pdf.text(ops, _PDF_MARGIN, y, 12.5, _PDF_INK, summary, bold=True)
-
-    # ---- legend line ----
-    y -= 18
-    bits = []
-    for t in shift_types:
-        overnight = _overnight(t.get("start"), t.get("end"))
-        bits.append(f"{t['name']} = {t.get('start', '?')}-{t.get('end', '?')}" + (" (next morning)" if overnight else ""))
-    bits += ["Leave = day off", "Off = no shift"]
-    pdf.text(ops, _PDF_MARGIN, y, 8.5, _PDF_MUTED, "     ".join(bits))
-
-    # ---- grid ----
-    grid_top = y - 20
-    grid_bottom = _PDF_MARGIN
-    grid_w = _PDF_PAGE_W - 2 * _PDF_MARGIN
-    header_h = 22
-    col_w = grid_w / 7
-    row_h = (grid_top - grid_bottom - header_h) / weeks
-
-    for c, wd in enumerate(_WEEKDAY_NAMES):
-        x = _PDF_MARGIN + c * col_w
-        pdf.rect(ops, x, grid_top - header_h, col_w, header_h, _PDF_BANNER)
-        pdf.text_centered(ops, x + col_w / 2, grid_top - header_h + 7, 10, "#ffffff", wd, bold=True)
-
-    d = 1
-    for w in range(weeks):
-        row_top = grid_top - header_h - w * row_h
-        for c in range(7):
-            x = _PDF_MARGIN + c * col_w
-            cell_index = w * 7 + c
-            in_month = first_dow <= cell_index < first_dow + days_in_month
-            if in_month:
-                status, shift_id = day_status[d]
-                bg = _PDF_OFF_BG if status == "off" else "#ffffff"
-                pdf.rect(ops, x, row_top - row_h, col_w, row_h, bg)
-            pdf.rect_stroke(ops, x, row_top - row_h, col_w, row_h, _PDF_GRID_LINE)
-            if not in_month:
-                continue
-            pdf.text(ops, x + 6, row_top - 13, 10, _PDF_INK, str(d), bold=True)
-            if status == "off":
-                pdf.text(ops, x + 6, row_top - row_h + 10, 9, _PDF_MUTED, "Off")
-            else:
-                if status == "leave":
-                    ink, pbg, label, sub = *colors.get("leave", ("#ffffff", "#8f1710")), "LEAVE", None
-                else:
-                    key = f"chip{(index_by_id.get(shift_id, 0) % 3) + 1}"
-                    ink, pbg = colors.get(key, (_PDF_INK, "#e5e5e5"))
-                    t = by_id[shift_id]
-                    label, sub = t["name"].upper(), f"{t.get('start', '')}-{t.get('end', '')}"
-                pill_w = min(col_w - 8, max(col_w * 0.8, 6.2 * len(label) + 14))
-                pill_x = x + (col_w - pill_w) / 2
-                pill_y = row_top - row_h + (row_h * 0.42 if sub else row_h * 0.34)
-                pdf.rect(ops, pill_x, pill_y, pill_w, 16, pbg)
-                pdf.text_centered(ops, x + col_w / 2, pill_y + 5, 9, ink, label, bold=True)
-                if sub:
-                    pdf.text_centered(ops, x + col_w / 2, pill_y - 10, 7.5, _PDF_MUTED, sub)
-            d += 1
-
-    pdf.text(ops, _PDF_MARGIN, grid_bottom - 16, 8.5, _PDF_MUTED, "Sent by Schedule Master.")
-    return pdf.build()
-
-
-def _overnight(start, end):
-    if not start or not end:
-        return False
-    sh, sm = (int(x) for x in start.split(":"))
-    eh, em = (int(x) for x in end.split(":"))
-    return (eh, em) <= (sh, sm)
-
-
-def build_shift_ics(name, month_label, entries):
-    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Schedule Master//EN", "CALSCALE:GREGORIAN"]
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    slug = re.sub(r"\W+", "", name) or "person"
-    for ds, _weekday, _label, color_key, t in entries:
-        y, m, d = (int(x) for x in ds.split("-"))
-        if t and t.get("start") and t.get("end"):
-            sh, sm = (int(x) for x in t["start"].split(":"))
-            eh, em = (int(x) for x in t["end"].split(":"))
-            start_dt = datetime(y, m, d, sh, sm)
-            end_dt = datetime(y, m, d, eh, em)
-            if end_dt <= start_dt:  # overnight shift, e.g. the default 19:00-07:00 "Night"
-                end_dt += timedelta(days=1)
-            dt_lines = [f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}", f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}"]
-            summary = t["name"]
-            uid_bit = t["id"]
-        else:
-            nd = date(y, m, d) + timedelta(days=1)
-            dt_lines = [f"DTSTART;VALUE=DATE:{y:04d}{m:02d}{d:02d}",
-                        f"DTEND;VALUE=DATE:{nd.year:04d}{nd.month:02d}{nd.day:02d}"]
-            summary = "Leave"
-            uid_bit = "leave"
-        lines += ["BEGIN:VEVENT", f"UID:{ds}-{uid_bit}-{slug}@schedulemaster", f"DTSTAMP:{stamp}"]
-        lines += dt_lines
-        lines += [f"SUMMARY:{summary}", "END:VEVENT"]
-    lines.append("END:VCALENDAR")
-    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
 
 
 def read_staff():
@@ -555,41 +277,434 @@ def clear_login_failures(ip):
         _FAILED.pop(ip, None)
 
 
-def build_shift_email(name, month_label, entries):
-    """Build (subject, plain-text body) for one person's slice of a month's shifts + leave."""
+def _person_days(name, year, month, shift_types, shifts, leave):
+    """One person's {day-of-month: shift_type_id-or-"__leave__"} for one month, plus per-type counts."""
+    by_id = {t["id"]: t for t in shift_types}
+    days = {}
+    for ds, day_shifts in shifts.items():
+        shift_id = day_shifts.get(name)
+        if not shift_id or shift_id not in by_id:
+            continue
+        y, m, d = (int(x) for x in ds.split("-"))
+        if y == year and m == month:
+            days[d] = shift_id
+    for ds in leave.get(name, []):
+        y, m, d = (int(x) for x in ds.split("-"))
+        if y == year and m == month:
+            days[d] = "__leave__"
+    return days, by_id
+
+
+def build_shift_message(name, year, month, month_label, shift_types, shifts, leave, palette="classic"):
+    """Build (subject, text_body, html_body) for one person's slice of a month's shifts + leave.
+    The html calendar is colored with the selected scheme's on-screen colors (SCREEN_PALETTES)."""
+    colors = SCREEN_PALETTES.get(palette) or SCREEN_PALETTES["classic"]
+    days, by_id = _person_days(name, year, month, shift_types, shifts, leave)
+    type_order = [t["id"] for t in shift_types]
+    counts = {tid: sum(1 for v in days.values() if v == tid) for tid in type_order}
+    n_leave = sum(1 for v in days.values() if v == "__leave__")
+    n_shifts = sum(counts.values())
+    first_name = (name.split() or ["there"])[0]
     subject = f"Your {month_label} shift schedule"
-    if not entries:
-        body = f"Hi {name},\n\nYou have no shifts or leave scheduled for {month_label}.\n"
-        return subject, body
-    lines = [f"Hi {name},", "", f"Your schedule for {month_label}:", ""]
-    for ds, weekday, label, _color_key, _t in entries:
-        lines.append(f"  {weekday}, {ds} \u2014 {label}")
-    lines += ["", f"That's {len([e for e in entries if e[3] != 'leave'])} shift(s) this month.",
-              "", "Your full schedule is also attached as a PDF, plus a calendar file (.ics)",
-              "you can import into your phone or calendar app."]
-    return subject, "\n".join(lines) + "\n"
+
+    def label_for(v):
+        if v == "__leave__":
+            return "Leave"
+        t = by_id.get(v)
+        return f"{t['name']} ({t['start']}\u2013{t['end']})" if t else v
+
+    # ---- plain-text (always sent, and shown by clients that can't/won't render html) ----
+    breakdown = ", ".join(f"{counts[tid]} {by_id[tid]['name']}" for tid in type_order if counts[tid]) or "0"
+    summary_line = f"{n_shifts} shift(s): {breakdown}" + (f", {n_leave} leave day(s)" if n_leave else "") + "."
+    text_lines = [f"Hi {first_name},", "", f"Your schedule for {month_label} - {summary_line}", ""]
+    if not days:
+        text_lines.append("You have no shifts or leave scheduled this month.")
+    for d in sorted(days):
+        wd = date(year, month, d).strftime("%a")
+        text_lines.append(f"  {wd}, {year}-{month:02d}-{d:02d} \u2014 {label_for(days[d])}")
+    text_lines += ["", "Sent by Schedule Master."]
+    text_body = "\n".join(text_lines) + "\n"
+
+    # ---- html calendar grid + dated list (mirrors the on-screen calendar's color coding) ----
+    lead = date(year, month, 1).isoweekday() % 7  # 0=Sun offset into the first week
+    total = calendar.monthrange(year, month)[1]
+    cells = [None] * lead + list(range(1, total + 1))
+    cells += [None] * (-len(cells) % 7)
+    mon3 = MONTHS[month - 1][:3]
+    rows = []
+    for r in range(0, len(cells), 7):
+        tds = []
+        for i, d in enumerate(cells[r:r + 7]):
+            if d is None:
+                tds.append('<td style="border:0;background:#ffffff">&nbsp;</td>')
+                continue
+            weekend = i in (0, 6)
+            v = days.get(d)
+            if v == "__leave__":
+                bg, fg = colors[3]
+                body = (f'<div style="background:{bg};color:{fg};font-weight:bold;font-size:11px;'
+                        f'padding:5px 6px;border-radius:5px;margin-top:6px">Leave</div>')
+            elif v:
+                idx = type_order.index(v) % 3
+                bg, fg = colors[idx]
+                body = (f'<div style="background:{bg};color:{fg};font-weight:bold;font-size:11px;'
+                        f'padding:5px 6px;border-radius:5px;margin-top:6px">{escape(by_id[v]["name"])}</div>')
+            else:
+                body = '<div style="color:#8793a0;font-size:11px;margin-top:6px">Off</div>'
+            tds.append(f'<td valign="top" height="60" style="border:1px solid #d8e0e8;border-radius:6px;'
+                       f'padding:6px;background:{"#fcfaf4" if weekend else "#ffffff"};font-family:{FONT}">'
+                       f'<div style="font-weight:bold;font-size:11px;color:#17212b">{DOWS[i]}, {mon3} {d}</div>{body}</td>')
+        rows.append(f"<tr>{''.join(tds)}</tr>")
+    head = "".join(f'<td align="center" style="background:#263746;color:#ffffff;font-weight:bold;'
+                   f'font-size:12px;padding:8px 2px;border-radius:5px;font-family:{FONT}">{x}</td>' for x in DOWS)
+    # legend as filled pills (not colored text): a "deep" scheme's text color is light, so plain colored
+    # text would be unreadable on the white email background
+    pill = ('<span style="display:inline-block;background:{bg};color:{fg};font-weight:bold;padding:2px 8px;'
+            'border-radius:9px;margin:2px 0">{label}</span>')
+    key_parts = [pill.format(bg=colors[i % 3][0], fg=colors[i % 3][1], label=escape(t["name"])) +
+                 f' ({escape(str(t["start"]))}\u2013{escape(str(t["end"]))})' for i, t in enumerate(shift_types)]
+    key_parts.append(pill.format(bg=colors[3][0], fg=colors[3][1], label="Leave"))
+    key = " &middot; ".join(key_parts) + " &middot; Grey = Off"
+    items = "".join(
+        f'<tr><td style="padding:3px 0;color:#17212b;font-size:13px;font-family:{FONT}">'
+        f'<b>{date(year, month, d).strftime("%a")} {mon3} {d}</b> \u2013 {escape(label_for(days[d]))}</td></tr>'
+        for d in sorted(days))
+    listing = (f'<tr><td style="padding:0 20px 12px"><div style="font-weight:bold;font-size:14px;'
+               f'color:#17212b;margin-bottom:4px;font-family:{FONT}">Your dates</div>'
+               f'<table role="presentation" cellpadding="0" cellspacing="0">'
+               f'{items or f"<tr><td style=\"font-size:13px;color:#687684\">No shifts this month.</td></tr>"}'
+               f'</table></td></tr>')
+    html_body = (
+        '<!doctype html><html><body style="margin:0;padding:0;background:#f4f6f8">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8">'
+        '<tr><td align="center" style="padding:16px 8px">'
+        f'<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;'
+        f'max-width:720px;background:#ffffff;border:1px solid #d8e0e8;border-radius:10px;font-family:{FONT}">'
+        '<tr><td style="background:#17324d;color:#ffffff;padding:16px 20px;border-radius:10px 10px 0 0">'
+        f'<div style="font-size:20px;font-weight:bold">{escape(month_label)} Shift Calendar</div>'
+        f'<div style="font-size:12px;opacity:.85;margin-top:4px">{escape(name)}</div></td></tr>'
+        f'<tr><td style="padding:16px 20px 6px;color:#17212b;font-size:14px">Hello {escape(first_name)}, '
+        f'here are your shifts for {escape(month_label)}.<br><b>{escape(summary_line)}</b></td></tr>'
+        f'<tr><td style="padding:4px 20px 10px;color:#687684;font-size:12px">{key}</td></tr>'
+        '<tr><td style="padding:0 14px 16px"><table role="presentation" width="100%" cellpadding="0" '
+        f'cellspacing="4" style="table-layout:fixed;border-collapse:separate"><tr>{head}</tr>{"".join(rows)}</table></td></tr>'
+        f'{listing}'
+        '<tr><td style="padding:0 20px 16px;color:#8793a0;font-size:11px">Sent by Schedule Master.</td></tr>'
+        '</table></td></tr></table></body></html>'
+    )
+    return subject, text_body, html_body
 
 
-def send_email(to_addr, subject, body, attachments=()):
-    """attachments: iterable of (filename, mime_subtype, bytes) - e.g. ("shifts.pdf", "pdf", data)."""
-    if attachments:
-        msg = MIMEMultipart("mixed")
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-        for filename, subtype, data in attachments:
-            part = MIMEApplication(data, _subtype=subtype)
-            part.add_header("Content-Disposition", "attachment", filename=filename)
-            msg.attach(part)
-    else:
-        msg = MIMEText(body, "plain", "utf-8")
+# ---------- attachments: one-page PDF month calendar + .ics calendar file ----------
+# Both are built with the standard library only (no reportlab/icalendar), in keeping with the rest of
+# this file. The PDF uses the two base-14 fonts every PDF reader already has (Helvetica, Helvetica-Bold)
+# so nothing needs embedding; text is WinAnsi (cp1252) encoded, so accented Latin names print correctly
+# and characters outside cp1252 fall back to "?".
+
+# Advance widths (1/1000 em) for ASCII 32..126, from the standard Adobe AFM metrics - used to centre and
+# truncate text so a long name or shift label never spills out of its calendar cell.
+_HELV_W = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556,
+           556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778,
+           722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278,
+           278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+           556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584]
+_HELVB_W = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556,
+            556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778,
+            722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333,
+            278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
+            611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584]
+
+
+def _pdf_text_width(text, size, bold=False):
+    import unicodedata
+    table = _HELVB_W if bold else _HELV_W
+    total = 0
+    for ch in text:
+        base = unicodedata.normalize("NFKD", ch)[:1] or ch  # accented letter -> width of its base letter
+        o = ord(base)
+        total += table[o - 32] if 32 <= o <= 126 else 556
+    return total * size / 1000.0
+
+
+def _pdf_fit(text, size, max_w, bold=False):
+    """Truncate text with an ellipsis so it fits max_w points."""
+    if _pdf_text_width(text, size, bold) <= max_w:
+        return text
+    while text and _pdf_text_width(text + "\u2026", size, bold) > max_w:
+        text = text[:-1]
+    return (text + "\u2026") if text else ""
+
+
+def _pdf_str(text):
+    """A PDF literal string in WinAnsi encoding, with ( ) \\ escaped and non-ASCII bytes as octal escapes."""
+    raw = text.encode("cp1252", errors="replace")
+    out = []
+    for b in raw:
+        if b in (0x28, 0x29, 0x5C):
+            out.append("\\" + chr(b))
+        elif 32 <= b <= 126:
+            out.append(chr(b))
+        else:
+            out.append("\\%03o" % b)
+    return "(" + "".join(out) + ")"
+
+
+def _pdf_rgb(hex_color):
+    h = hex_color.lstrip("#")
+    return "%.3f %.3f %.3f" % tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+
+class _PdfPage:
+    """Tiny content-stream builder. Coordinates are top-left based (y grows downward) like the HTML
+    layout, and converted to PDF's bottom-left origin internally."""
+
+    def __init__(self, width, height):
+        self.w, self.h = width, height
+        self.ops = []
+
+    def rect(self, x, y, w, h, fill=None, stroke=None, radius=0, line=0.8):
+        y0 = self.h - y - h
+        if radius:
+            r, k = min(radius, w / 2, h / 2), 0.5523 * min(radius, w / 2, h / 2)
+            p = [f"{x + r:.2f} {y0:.2f} m", f"{x + w - r:.2f} {y0:.2f} l",
+                 f"{x + w - r + k:.2f} {y0:.2f} {x + w:.2f} {y0 + r - k:.2f} {x + w:.2f} {y0 + r:.2f} c",
+                 f"{x + w:.2f} {y0 + h - r:.2f} l",
+                 f"{x + w:.2f} {y0 + h - r + k:.2f} {x + w - r + k:.2f} {y0 + h:.2f} {x + w - r:.2f} {y0 + h:.2f} c",
+                 f"{x + r:.2f} {y0 + h:.2f} l",
+                 f"{x + r - k:.2f} {y0 + h:.2f} {x:.2f} {y0 + h - r + k:.2f} {x:.2f} {y0 + h - r:.2f} c",
+                 f"{x:.2f} {y0 + r:.2f} l",
+                 f"{x:.2f} {y0 + r - k:.2f} {x + r - k:.2f} {y0:.2f} {x + r:.2f} {y0:.2f} c", "h"]
+            path = " ".join(p)
+        else:
+            path = f"{x:.2f} {y0:.2f} {w:.2f} {h:.2f} re"
+        if fill:
+            self.ops.append(f"{_pdf_rgb(fill)} rg")
+        if stroke:
+            self.ops.append(f"{_pdf_rgb(stroke)} RG {line:.2f} w")
+        self.ops.append(path + (" B" if fill and stroke else (" f" if fill else " S")))
+
+    def text(self, x, y, text, size, color="#17212b", bold=False, align="left", max_w=None):
+        if max_w is not None:
+            text = _pdf_fit(text, size, max_w, bold)
+        if not text:
+            return
+        tw = _pdf_text_width(text, size, bold)
+        if align == "center":
+            x -= tw / 2
+        elif align == "right":
+            x -= tw
+        self.ops.append(f"BT /{'F2' if bold else 'F1'} {size:.2f} Tf {_pdf_rgb(color)} rg "
+                        f"{x:.2f} {self.h - y - size * 0.8:.2f} Td {_pdf_str(text)} Tj ET")
+
+    def to_pdf(self, title=""):
+        import zlib
+        stream = zlib.compress("\n".join(self.ops).encode("latin-1"))
+        objs = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {self.w} {self.h}] /Contents 4 0 R "
+             f"/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>").encode("ascii"),
+            b"<< /Length %d /Filter /FlateDecode >>\nstream\n" % len(stream) + stream + b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+            (f"<< /Title {_pdf_str(title)} /Producer (Schedule Master) >>").encode("latin-1"),
+        ]
+        out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+        offsets = []
+        for i, body in enumerate(objs, start=1):
+            offsets.append(len(out))
+            out += b"%d 0 obj\n" % i + body + b"\nendobj\n"
+        xref = len(out)
+        out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+        for off in offsets:
+            out += b"%010d 00000 n \n" % off
+        out += b"trailer\n<< /Size %d /Root 1 0 R /Info 7 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+        return bytes(out)
+
+
+def build_shift_pdf(name, year, month, month_label, shift_types, shifts, leave, palette="classic"):
+    """One-page landscape A4 PDF: this person's month as a Sun-Sat grid (same layout as the on-screen /
+    printed calendar), with a shift-count summary and legend, in the exact colors of SCREEN_PALETTES[palette]."""
+    colors = SCREEN_PALETTES.get(palette) or SCREEN_PALETTES["classic"]
+    days, by_id = _person_days(name, year, month, shift_types, shifts, leave)
+    type_order = [t["id"] for t in shift_types]
+    counts = {tid: sum(1 for v in days.values() if v == tid) for tid in type_order}
+    n_leave = sum(1 for v in days.values() if v == "__leave__")
+    n_shifts = sum(counts.values())
+    breakdown = ", ".join(f"{counts[tid]} {by_id[tid]['name']}" for tid in type_order if counts[tid]) or "0"
+    summary = f"{n_shifts} shift(s): {breakdown}" + (f", {n_leave} leave day(s)" if n_leave else "") + "."
+
+    W, H, M = 842, 595, 28  # A4 landscape, points; M = page margin
+    pg = _PdfPage(W, H)
+    # header band
+    pg.rect(M, M, W - 2 * M, 50, fill="#17324d", radius=8)
+    pg.text(M + 16, M + 10, f"{month_label} Shift Calendar", 18, color="#ffffff", bold=True, max_w=W - 2 * M - 32)
+    pg.text(M + 16, M + 33, name, 10.5, color="#dbe4ee", max_w=W - 2 * M - 32)
+    # summary + legend
+    y = M + 62
+    pg.text(M, y, summary, 11, bold=True, max_w=W - 2 * M)
+    y += 18
+    x = M
+    legend = [(t["name"] + (f"  {t['start']}\u2013{t['end']}" if t.get("start") and t.get("end") else ""),
+               colors[i % 3]) for i, t in enumerate(shift_types)]
+    legend.append(("Leave", colors[3]))
+    for label, (bg, fg) in legend:
+        wlab = min(_pdf_text_width(label, 9, True) + 16, 200)
+        if x + wlab > W - M:
+            break
+        pg.rect(x, y, wlab, 15, fill=bg, radius=7)
+        pg.text(x + wlab / 2, y + 3.5, label, 9, color=fg, bold=True, align="center", max_w=wlab - 10)
+        x += wlab + 6
+    pg.text(x + 2, y + 3.5, "Off = no shift", 9, color="#687684")
+    y += 24
+    # weekday header pills (matches the print stylesheet's dark weekday header)
+    gap = 4
+    col_w = (W - 2 * M - 6 * gap) / 7.0
+    for i, dname in enumerate(DOWS):
+        cx = M + i * (col_w + gap)
+        pg.rect(cx, y, col_w, 18, fill="#1e293b", radius=4)
+        pg.text(cx + col_w / 2, y + 4.5, dname, 9.5, color="#ffffff", bold=True, align="center")
+    y += 18 + gap
+    # month grid
+    lead = date(year, month, 1).isoweekday() % 7
+    total = calendar.monthrange(year, month)[1]
+    cells = [None] * lead + list(range(1, total + 1))
+    cells += [None] * (-len(cells) % 7)
+    n_rows = len(cells) // 7
+    footer_h = 16
+    row_h = min(78, (H - M - footer_h - y - (n_rows - 1) * gap) / n_rows)
+    mon3 = MONTHS[month - 1][:3]
+    for r in range(n_rows):
+        for i in range(7):
+            d = cells[r * 7 + i]
+            if d is None:
+                continue
+            cx, cy = M + i * (col_w + gap), y + r * (row_h + gap)
+            weekend = i in (0, 6)
+            pg.rect(cx, cy, col_w, row_h, fill="#fcfaf4" if weekend else "#ffffff", stroke="#8a8578", radius=5, line=0.6)
+            pg.text(cx + 6, cy + 5, f"{mon3} {d}", 9, color="#17212b", bold=True)
+            v = days.get(d)
+            chip_y, chip_h = cy + 20, min(30, row_h - 26)
+            if v == "__leave__":
+                bg, fg = colors[3]
+                pg.rect(cx + 5, chip_y, col_w - 10, chip_h, fill=bg, stroke="#000000", radius=4, line=0.3)
+                pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 5, "Leave", 10, color=fg, bold=True, align="center")
+            elif v:
+                t = by_id[v]
+                bg, fg = colors[type_order.index(v) % 3]
+                pg.rect(cx + 5, chip_y, col_w - 10, chip_h, fill=bg, stroke="#000000", radius=4, line=0.3)
+                times = f"{t['start']}\u2013{t['end']}" if t.get("start") and t.get("end") else ""
+                if times and chip_h >= 24:
+                    pg.text(cx + col_w / 2, chip_y + 4, t["name"], 10, color=fg, bold=True, align="center", max_w=col_w - 16)
+                    pg.text(cx + col_w / 2, chip_y + 16, times, 8, color=fg, align="center", max_w=col_w - 16)
+                else:
+                    pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 5, t["name"], 10, color=fg, bold=True,
+                            align="center", max_w=col_w - 16)
+            else:
+                pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 4, "Off", 9, color="#8793a0", align="center")
+    pg.text(M, H - M - 10, f"Sent by Schedule Master \u00b7 {name} \u00b7 {month_label}", 8, color="#8793a0", max_w=W - 2 * M)
+    return pg.to_pdf(title=f"{month_label} shifts - {name}")
+
+
+def _ics_escape(text):
+    return (str(text).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+            .replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n"))
+
+
+def _ics_fold(line):
+    """RFC 5545 line folding: max 75 octets per line, continuation lines start with a space."""
+    out, cur, cur_len = [], "", 0
+    for ch in line:
+        n = len(ch.encode("utf-8"))
+        limit = 75 if not out else 74
+        if cur_len + n > limit:
+            out.append(cur)
+            cur, cur_len = "", 0
+        cur += ch
+        cur_len += n
+    out.append(cur)
+    return "\r\n ".join(out)
+
+
+def _hhmm(value):
+    m = re.match(r"^(\d{1,2}):(\d{2})$", str(value or "").strip())
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def build_shift_ics(name, year, month, month_label, shift_types, shifts, leave):
+    """An importable iCalendar (.ics) file: one timed event per shift (an end at/before the start means the
+    shift runs past midnight into the next day) and one all-day event per leave day. Times are "floating"
+    local wall-clock times - the same times shown in the app - so they appear at those hours on the
+    recipient's calendar. UIDs are stable per person+date, so importing a re-sent month updates events
+    rather than duplicating them (SEQUENCE increases with each send)."""
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+    days, by_id = _person_days(name, year, month, shift_types, shifts, leave)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    sequence = int(time.time())
+    person_key = hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Schedule Master//Shift schedule//EN",
+             "CALSCALE:GREGORIAN", "METHOD:PUBLISH", f"X-WR-CALNAME:{_ics_escape(f'Shifts - {month_label}')}"]
+    for d in sorted(days):
+        v = days[d]
+        day = date(year, month, d)
+        lines += ["BEGIN:VEVENT", f"UID:{day:%Y%m%d}-{person_key}@schedulemaster",
+                  f"DTSTAMP:{stamp}", f"SEQUENCE:{sequence}"]
+        if v == "__leave__":
+            lines += [f"DTSTART;VALUE=DATE:{day:%Y%m%d}", f"DTEND;VALUE=DATE:{day + timedelta(days=1):%Y%m%d}",
+                      "SUMMARY:Leave", "TRANSP:TRANSPARENT"]
+        else:
+            t = by_id[v]
+            start, end = _hhmm(t.get("start")), _hhmm(t.get("end"))
+            if start and end:
+                s_dt = datetime(year, month, d, *start)
+                e_dt = datetime(year, month, d, *end)
+                if e_dt <= s_dt:
+                    e_dt += timedelta(days=1)  # overnight shift, e.g. Night 19:00-07:00
+                lines += [f"DTSTART:{s_dt:%Y%m%dT%H%M%S}", f"DTEND:{e_dt:%Y%m%dT%H%M%S}"]
+            else:  # no usable times for this shift type - still put it on the right day
+                lines += [f"DTSTART;VALUE=DATE:{day:%Y%m%d}", f"DTEND;VALUE=DATE:{day + timedelta(days=1):%Y%m%d}"]
+            lines += [f"SUMMARY:{_ics_escape(t['name'] + ' shift')}",
+                      f"DESCRIPTION:{_ics_escape(f'{name} - ' + t['name'] + ' shift, ' + month_label)}"]
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    return ("\r\n".join(_ics_fold(line) for line in lines) + "\r\n").encode("utf-8")
+
+
+def attachment_basename(name, year, month):
+    """Shifts_YYYY-MM_Full Name - characters that are unsafe in file names are removed."""
+    safe = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]+', "", name).strip().strip(".") or "staff"
+    safe = re.sub(r"\s+", " ", safe)[:80]
+    return f"Shifts_{year}-{month:02d}_{safe}"
+
+
+def open_smtp():
+    """One SMTP connection, reused for every recipient in a batch rather than reconnecting each time."""
+    server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+    server.ehlo()
+    if SMTP_USE_TLS:
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+    if SMTP_USERNAME and SMTP_PASSWORD:
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+    return server
+
+
+def send_via(server, to_addr, subject, text_body, html_body, attachments=None):
+    """attachments: optional list of (filename, maintype, subtype, bytes)."""
+    msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_ADDR))
     msg["To"] = to_addr
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-        if SMTP_USE_TLS:
-            server.starttls()
-        if SMTP_USERNAME and SMTP_PASSWORD:
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(SMTP_FROM_ADDR, [to_addr], msg.as_string())
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid()
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+    for filename, maintype, subtype, data in (attachments or []):
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
+    server.send_message(msg, from_addr=SMTP_FROM_ADDR, to_addrs=[to_addr])
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -694,7 +809,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
             return
-        super().do_GET()
+        self._serve_app_page_only(super().do_GET)
+
+    def do_HEAD(self):
+        # SimpleHTTPRequestHandler answers HEAD for any file too (headers only, but that still confirms
+        # a file exists and its size) - apply the same one-file allowlist as GET.
+        self._serve_app_page_only(super().do_HEAD)
+
+    def _serve_app_page_only(self, serve):
+        # The folder this server runs from also holds login.json (plaintext password), staff.json,
+        # records.json, emails.json and this script. The static handler used to serve ANY file in it,
+        # with no session check, so e.g. GET /login.json returned the password. Only the app page itself
+        # is served statically now; its data goes through the authenticated /api/* routes above.
+        req_path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+        if req_path != "/" + HTML_FILE:
+            if self.command == "HEAD":  # a HEAD response must not carry a body
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self._send_json(404, {"error": "not found"})
+            return
+        serve()
 
     def do_PUT(self):
         path = self.path.rstrip("/")
@@ -759,7 +895,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except ValueError as e:
                 self._send_json(500, {"error": f"login.json is unreadable: {e}"})
                 return
-            if username.lower() == creds["username"].lower() and password == creds["password"]:
+            # constant-time comparison so response timing doesn't leak how much of the password matched
+            user_ok = hmac.compare_digest(username.lower().encode("utf-8"), creds["username"].lower().encode("utf-8"))
+            pass_ok = hmac.compare_digest(password.encode("utf-8"), creds["password"].encode("utf-8"))
+            if user_ok and pass_ok:
                 clear_login_failures(ip)
                 token = create_session()
                 self._send_json(200, {"ok": True}, extra_headers=[("Set-Cookie", self._session_cookie_header(token))])
@@ -781,21 +920,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json(400, {"error": f"bad request body: {e}"})
                 return
-            month_label = str(req.get("monthLabel") or "this month")
+            try:
+                year, month = int(req.get("year")), int(req.get("month")) + 1  # JS month is 0-based
+            except (TypeError, ValueError):
+                self._send_json(400, {"error": "bad year/month"})
+                return
+            if not (1 <= month <= 12 and 1 <= year <= 9999):
+                self._send_json(400, {"error": "bad year/month"})
+                return
+            month_label = str(req.get("monthLabel") or f"{MONTHS[month - 1]} {year}")
             shift_types = req.get("shiftTypes") or []
             shifts = req.get("shifts") or {}
             leave = req.get("leave") or {}
-            palette_id = str(req.get("palette") or "classic")
-            today = date.today()
-            try:
-                year = int(req.get("year"))
-            except (TypeError, ValueError):
-                year = today.year
-            try:
-                month0 = int(req.get("month"))  # 0-indexed, matching the browser's Date convention
-                assert 0 <= month0 <= 11
-            except (TypeError, ValueError, AssertionError):
-                month0 = today.month - 1
+            palette = str(req.get("palette") or "classic")
+            if palette not in SCREEN_PALETTES:
+                palette = "classic"  # unknown/older client value - fall back rather than fail the whole send
             try:
                 addresses = read_emails()["emails"]
             except ValueError as e:
@@ -806,23 +945,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
 
             sent, skipped, failed = [], [], []
+            to_send = []
             for name, addr in addresses.items():
-                if not EMAIL_RE.match(addr):
+                if EMAIL_RE.match(addr):
+                    to_send.append((name, addr))
+                else:
                     skipped.append({"name": name, "reason": "invalid email address"})
-                    continue
+
+            server = None
+            if to_send:
                 try:
-                    entries = person_entries(name, shift_types, shifts, leave)
-                    subject, mail_body = build_shift_email(name, month_label, entries)
-                    pdf_bytes = build_shift_pdf(name, year, month0, month_label, shift_types, shifts, leave, palette_id)
-                    ics_bytes = build_shift_ics(name, month_label, entries)
-                    stem = f"Shifts_{year:04d}-{month0 + 1:02d}_{_safe_filename_part(name)}"
-                    send_email(addr, subject, mail_body, attachments=[
-                        (f"{stem}.pdf", "pdf", pdf_bytes),
-                        (f"{stem}.ics", "ics", ics_bytes),
-                    ])
+                    server = open_smtp()
+                except Exception as e:
+                    self._send_json(502, {"error": f"could not connect to the mail relay: {e}"})
+                    return
+            for name, addr in to_send:
+                try:
+                    subject, text_body, html_body = build_shift_message(name, year, month, month_label, shift_types,
+                                                                        shifts, leave, palette)
+                    base = attachment_basename(name, year, month)
+                    attachments = [
+                        (base + ".pdf", "application", "pdf",
+                         build_shift_pdf(name, year, month, month_label, shift_types, shifts, leave, palette)),
+                        (base + ".ics", "text", "calendar",
+                         build_shift_ics(name, year, month, month_label, shift_types, shifts, leave)),
+                    ]
+                    try:
+                        send_via(server, addr, subject, text_body, html_body, attachments)
+                    except (smtplib.SMTPServerDisconnected, smtplib.SMTPSenderRefused, OSError):
+                        server = open_smtp()  # relay dropped the connection mid-batch - reconnect once and retry
+                        send_via(server, addr, subject, text_body, html_body, attachments)
                     sent.append(name)
                 except Exception as e:
                     failed.append({"name": name, "error": str(e)})
+            if server is not None:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
             self._send_json(200, {"sent": sent, "skipped": skipped, "failed": failed})
             return
         self._send_json(404, {"error": "not found"})

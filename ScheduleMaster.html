@@ -183,7 +183,7 @@ table.workload td.ok{color:var(--ok);}
 .cs-slot button{flex:0 0 auto;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#paletteRow,#loginOverlay{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#emailPanel,#paletteRow,#loginOverlay{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -398,6 +398,11 @@ table.workload td.ok{color:var(--ok);}
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
+// HTML-escape any user-supplied text (staff names, shift names, record labels, email addresses...) before
+// it goes into an innerHTML template. Without it, a name like <img src=x onerror=...> in staff.json, an
+// imported records.json, or emails.json would run as script in the page. Values read back through
+// dataset/getAttribute/.value come out un-escaped, so comparisons against S.* data are unaffected.
+const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 
 // ---------- login (session-cookie auth against the local server) ----------
 // A global fetch wrapper rather than touching every individual api call: if the server ever answers
@@ -596,12 +601,12 @@ function renderShiftTypes(){
     const row=document.createElement("div"); row.className="shifttype-row";
     row.innerHTML=`
       <span class="dot" style="background:${CHIP_COLORS[i%3][0]};width:14px;height:14px;border-radius:4px;"></span>
-      <input type="text" value="${t.name}" data-f="name">
-      <input type="time" value="${t.start}" data-f="start">
-      <input type="time" value="${t.end}" data-f="end">
-      <input type="number" value="${t.wdTarget}" min="0" data-f="wdTarget">
-      <input type="number" value="${t.wdMin}" min="0" data-f="wdMin" ${t.flex?"":"disabled"}>
-      <input type="number" value="${t.weTarget}" min="0" data-f="weTarget">
+      <input type="text" value="${esc(t.name)}" data-f="name">
+      <input type="time" value="${esc(t.start)}" data-f="start">
+      <input type="time" value="${esc(t.end)}" data-f="end">
+      <input type="number" value="${esc(t.wdTarget)}" min="0" data-f="wdTarget">
+      <input type="number" value="${esc(t.wdMin)}" min="0" data-f="wdMin" ${t.flex?"":"disabled"}>
+      <input type="number" value="${esc(t.weTarget)}" min="0" data-f="weTarget">
       <input type="checkbox" ${t.flex?"checked":""} data-f="flex">
       <input type="checkbox" ${t.ka?"checked":""} data-f="ka">`;
     row.querySelectorAll("[data-f]").forEach(el=>{
@@ -633,7 +638,7 @@ function renderLegend(){
   const el=$("legend"); el.innerHTML="";
   S.shiftTypes.forEach((t,i)=>{
     const [ink,bg]=CHIP_COLORS[i%3];
-    el.innerHTML+=`<span class="legend-pill" style="--pill-ink:${ink};--pill-bg:${bg}">${t.name} <span class="legend-time">${t.start}–${t.end}</span></span>`;
+    el.innerHTML+=`<span class="legend-pill" style="--pill-ink:${ink};--pill-bg:${bg}">${esc(t.name)} <span class="legend-time">${esc(t.start)}–${esc(t.end)}</span></span>`;
   });
   el.innerHTML+=`<span class="legend-pill leave-pill">Leave</span>`;
 }
@@ -643,30 +648,30 @@ function renderStaff(){
   const ul=$("staffList"); ul.innerHTML="";
   S.staff.forEach(name=>{
     const li=document.createElement("li"); li.className="pill";
-    li.innerHTML=`${name}<button title="Remove">✕</button>`;
+    li.innerHTML=`${esc(name)}<button title="Remove">✕</button>`;
     li.querySelector("button").addEventListener("click",()=>{
       S.staff=S.staff.filter(n=>n!==name);
       delete S.leave[name];
       for(const d in S.shifts) delete S.shifts[d][name];
       S.keepApart.forEach(p=>{ if(p[0]===name)p[0]=null; if(p[1]===name)p[1]=null; });
       (S.compulsoryStarters||[]).forEach(cs=>{ if(cs.person===name) cs.person=null; });
-      save(); renderAll();
+      save(); renderAll(); noteStaffUnsaved(`Removed ${name}.`);
     });
     ul.appendChild(li);
   });
   [ "leavePerson","mpPerson"].forEach(id=>{
     const sel=$(id); const cur=sel.value; sel.innerHTML="";
-    S.staff.forEach(n=>sel.innerHTML+=`<option value="${n}">${n}</option>`);
+    S.staff.forEach(n=>sel.innerHTML+=`<option value="${esc(n)}">${esc(n)}</option>`);
     if(S.staff.includes(cur)) sel.value=cur;
   });
   const view=$("viewSel"); const curV=view.value;
-  view.innerHTML=`<option value="__all__">Everyone</option>`+S.staff.map(n=>`<option value="${n}">${n}</option>`).join("");
+  view.innerHTML=`<option value="__all__">Everyone</option>`+S.staff.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
   view.value=S.staff.includes(curV)||curV==="__all__"?curV:"__all__";
 }
 $("addStaff").addEventListener("click",()=>{
   const v=$("newStaff").value.trim();
   if(!v) return;
-  if(!S.staff.includes(v)){ S.staff.push(v); S.staff.sort(); save(); renderAll(); }
+  if(!S.staff.includes(v)){ S.staff.push(v); S.staff.sort(); save(); renderAll(); noteStaffUnsaved(`Added ${v}.`); }
   $("newStaff").value="";
 });
 $("newStaff").addEventListener("keydown",e=>{ if(e.key==="Enter") $("addStaff").click(); });
@@ -678,8 +683,8 @@ function renderKeepApartUI(){
     const p=S.keepApart[i];
     const row=document.createElement("div"); row.className="row";
     row.innerHTML=`<label>Pair ${i+1}</label>
-      <select data-i="${i}" data-k="0"><option value="">—</option>${S.staff.map(n=>`<option ${p[0]===n?"selected":""} value="${n}">${n}</option>`).join("")}</select>
-      <select data-i="${i}" data-k="1"><option value="">—</option>${S.staff.map(n=>`<option ${p[1]===n?"selected":""} value="${n}">${n}</option>`).join("")}</select>`;
+      <select data-i="${i}" data-k="0"><option value="">—</option>${S.staff.map(n=>`<option ${p[0]===n?"selected":""} value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+      <select data-i="${i}" data-k="1"><option value="">—</option>${S.staff.map(n=>`<option ${p[1]===n?"selected":""} value="${esc(n)}">${esc(n)}</option>`).join("")}</select>`;
     row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
       S.keepApart[i][Number(sel.dataset.k)]=sel.value||null; save();
       const pr=S.keepApart[i];
@@ -729,7 +734,7 @@ function renderLeaveGrid(){
       const t=shiftById(existing);
       const [ink,bg]=CHIP_COLORS[idx%3];
       cell.title=`${person} already has ${t.name} on ${ds} — selecting Leave here will clear it.`;
-      tag=`<span class="mptag" style="background:${bg};color:${ink}">${t.name}</span>`;
+      tag=`<span class="mptag" style="background:${bg};color:${ink}">${esc(t.name)}</span>`;
     }
     cell.innerHTML=`<div class="mpdaynum">${d}</div>${tag}`;
     cell.addEventListener("click",()=>{
@@ -760,7 +765,7 @@ function renderLeaveList(){
       chip.className="chip leave";
       chip.style.cssText="display:inline-flex;align-items:center;gap:6px;cursor:default;";
       const label2=r.start===r.end ? fmtShort(r.start) : `${fmtShort(r.start)} – ${fmtShort(r.end)}`;
-      chip.innerHTML=`${label2} <button type="button" data-remove-person="${person}" data-remove-start="${r.start}" data-remove-end="${r.end}" title="Remove ${r.start===r.end?"this date":"this date range"}" style="background:none;border:none;color:inherit;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;">×</button>`;
+      chip.innerHTML=`${esc(label2)} <button type="button" data-remove-person="${esc(person)}" data-remove-start="${esc(r.start)}" data-remove-end="${esc(r.end)}" title="Remove ${r.start===r.end?"this date":"this date range"}" style="background:none;border:none;color:inherit;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;">×</button>`;
       row.appendChild(chip);
     });
     list.appendChild(row);
@@ -812,17 +817,22 @@ $("leaveAdd").addEventListener("click",()=>{
     if(!S.leave[person].includes(ds)) S.leave[person].push(ds);
     setPersonShift(ds,person,null);
   });
-  // weekend sandwiched between leave days gets added automatically
+  // weekend sandwiched between leave days gets added automatically - only when leave sits directly either
+  // side of it (e.g. Fri + Mon -> Sat & Sun; Fri + Sun -> Sat). Previously any weekend anywhere between
+  // two leave dates was added, so leave on the 1st and the 28th swallowed every weekend in between.
   S.leave[person].sort();
+  const weekendFill=[];
   for(let i=0;i<S.leave[person].length-1;i++){
     const a=S.leave[person][i], b=S.leave[person][i+1];
-    let cursor=a;
-    while(addDaysStr(cursor,1)!==b && addDaysStr(cursor,1)<b){
-      cursor=addDaysStr(cursor,1);
+    const gap=[]; let allWeekend=true;
+    for(let cursor=addDaysStr(a,1); cursor<b; cursor=addDaysStr(cursor,1)){
       const [yy,mm,dd]=cursor.split("-").map(Number);
-      if(isWeekend(yy,mm-1,dd) && !S.leave[person].includes(cursor)){ S.leave[person].push(cursor); setPersonShift(cursor,person,null); }
+      if(!isWeekend(yy,mm-1,dd)){ allWeekend=false; break; }
+      gap.push(cursor);
     }
+    if(allWeekend) weekendFill.push(...gap);
   }
+  weekendFill.forEach(ds=>{ if(!S.leave[person].includes(ds)){ S.leave[person].push(ds); setPersonShift(ds,person,null); } });
   S.leave[person].sort();
   leaveStagedKey=null; // re-derive from the saved state (including the auto-added weekends) next render
   save(); setStatus(`Saved leave for ${person} this month: ${checkedDates.length} day(s) on leave.`); renderAll();
@@ -839,7 +849,7 @@ $("leaveClearPerson").addEventListener("click",()=>{
 // ---------- manual plot ----------
 function renderManualTypeRow(){
   const row=$("mpTypeRow"); row.innerHTML="";
-  S.shiftTypes.forEach(t=>row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="${t.id}">${t.name}</label>`);
+  S.shiftTypes.forEach(t=>row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="${esc(t.id)}">${esc(t.name)}</label>`);
   row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="" checked>Off</label>`;
 }
 function setStatus(msg){ $("status").textContent=msg; }
@@ -872,7 +882,7 @@ function renderManualCalendar(){
       const t=shiftById(existing);
       const [ink,bg]=CHIP_COLORS[idx%3];
       cell.title=`${person} already has ${t.name} on ${ds}.`;
-      tag=`<span class="mptag" style="background:${bg};color:${ink}">${t.name}</span>`;
+      tag=`<span class="mptag" style="background:${bg};color:${ink}">${esc(t.name)}</span>`;
     }
     cell.innerHTML=`<div class="mpdaynum">${d}</div>${tag}`;
     if(!onLeave) cell.addEventListener("click",()=>{
@@ -1055,17 +1065,17 @@ function renderCalendar(){
       const cls=empty?" low":(short?" warn":"");
       const ink=empty?"var(--leave)":(short?"var(--warn)":"var(--ok)");
       const bg=empty?"var(--leave-bg)":(short?"var(--warn-bg)":"var(--ok-bg)");
-      badges+=`<div class="badge-pill${cls}" style="--badge-ink:${ink};--badge-bg:${bg}">${t.name} ${have}/${target(t)}</div>`;
+      badges+=`<div class="badge-pill${cls}" style="--badge-ink:${ink};--badge-bg:${bg}">${esc(t.name)} ${have}/${esc(target(t))}</div>`;
     });
     badges+="</div>";
     let html=`<div class="daytop"><div class="daynum">${d}</div>${badges}</div><div class="chiplist">`;
     S.shiftTypes.forEach((t,i)=>{
       const people=Object.keys(dayShifts).filter(p=>dayShifts[p]===t.id && (S.view==="__all__"||S.view===p));
-      people.forEach(p=>{ html+=`<span class="chip" data-p="${p}" data-d="${ds}" style="background:${CHIP_COLORS[i%3][1]};color:${CHIP_COLORS[i%3][0]}">${p}</span>`; });
+      people.forEach(p=>{ html+=`<span class="chip" data-p="${esc(p)}" data-d="${esc(ds)}" style="background:${CHIP_COLORS[i%3][1]};color:${CHIP_COLORS[i%3][0]}">${esc(p)}</span>`; });
     });
     for(const p in S.leave){
       if(S.view!=="__all__" && S.view!==p) continue;
-      if(isOnLeave(p,ds)) html+=`<span class="chip leave">${p} (leave)</span>`;
+      if(isOnLeave(p,ds)) html+=`<span class="chip leave">${esc(p)} (leave)</span>`;
     }
     html+="</div>";
     cell.innerHTML=html;
@@ -1090,7 +1100,7 @@ function longestRun(person){
 }
 function renderWorkload(){
   const table=$("workloadTable"); 
-  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${t.name}</th>`).join("")+`<th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
+  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
   let body="";
   S.staff.forEach(person=>{
     const total=totalShiftsFor(person,null);
@@ -1123,7 +1133,7 @@ function renderWorkload(){
       }
     }
     const status=problems.length?[...new Set(problems)].join(", "):"OK";
-    body+=`<tr><td>${person}</td><td>${total}</td><td>${quota}</td>`+counts.map(c=>`<td>${c}</td>`).join("")+`<td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
+    body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map(c=>`<td>${c}</td>`).join("")+`<td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
   });
   table.innerHTML=head+body;
 }
@@ -1143,7 +1153,7 @@ function renderCoverage(){
     S.shiftTypes.forEach(t=>{
       const have=Object.values(dayShifts).filter(v=>v===t.id).length;
       const min=weekend?t.weTarget:(t.flex?t.wdMin:t.wdTarget);
-      if(have<min) gaps.push(`${ds}: ${t.name} has ${have}, needs at least ${min}`);
+      if(have<min) gaps.push(`${esc(ds)}: ${esc(t.name)} has ${have}, needs at least ${esc(min)}`);
     });
   }
   let html = gaps.length? `<div style="color:var(--bad)">${gaps.length} coverage gap(s):<br>`+gaps.join("<br>")+"</div>" : `<div style="color:var(--ok)">Every shift meets its minimum this month.</div>`;
@@ -1154,7 +1164,7 @@ function renderCoverage(){
       const a=S.shifts[ds][pair[0]], b=S.shifts[ds][pair[1]];
       if(a && a===b){ const t=shiftById(a); if(isWeekend(yy,mm-1,dd)||t.ka) shared++; else weekdayDayShared++; }
     }
-    html+=`<div style="margin-top:6px;">Pair ${i+1} (${pair[0]} / ${pair[1]}): ${shared} strict clash(es), ${weekdayDayShared} shared soft weekday shift(s).</div>`;
+    html+=`<div style="margin-top:6px;">Pair ${i+1} (${esc(pair[0])} / ${esc(pair[1])}): ${shared} strict clash(es), ${weekdayDayShared} shared soft weekday shift(s).</div>`;
   });
   let singleWd=0;
   for(let d=1; d<=n; d++){
@@ -1192,7 +1202,7 @@ $("fileImport").addEventListener("change",e=>{
       const data=JSON.parse(reader.result);
       if(!Array.isArray(data.staff)) throw new Error("bad format");
       S.staff=[...new Set(data.staff.map(n=>String(n).trim()).filter(Boolean))].sort();
-      save(); renderAll(); setStatus(`Imported ${S.staff.length} staff from file.`);
+      save(); renderAll(); setStatus(`Imported ${S.staff.length} staff from file.`); noteStaffUnsaved(`Imported ${S.staff.length} staff from file.`);
     }catch(err){ setStatus("Could not read that file: "+err.message); }
   };
   reader.readAsText(f);
@@ -1201,6 +1211,14 @@ $("fileImport").addEventListener("change",e=>{
 // ---------- local server (Start ScheduleMaster.bat / ScheduleMaster.py) ----------
 const API="api/staff";
 S.serverMode=false;
+// Staff edits (add/remove/import) only reach staff.json when Save is clicked; Reload (and the next page
+// load) replace the list with what's on the server. Track unsaved edits so they aren't lost silently.
+let staffUnsaved=false;
+function noteStaffUnsaved(what){
+  if(!S.serverMode) return; // browser-only mode: nothing on a server to diverge from
+  staffUnsaved=true;
+  setStatus(`${what} Not saved to staff.json yet — click Save to keep this change.`);
+}
 async function tryServerLoad(){
   try{
     const res=await fetch(API,{cache:"no-store"});
@@ -1209,6 +1227,7 @@ async function tryServerLoad(){
     if(!Array.isArray(data.staff)) throw new Error("staff.json is not in the expected {\"staff\":[...]} form");
     S.staff=[...new Set(data.staff.map(n=>String(n).trim()).filter(Boolean))].sort();
     S.serverMode=true;
+    staffUnsaved=false;
     save(); renderAll();
     setStatus(`Loaded ${S.staff.length} staff from staff.json (local server).`);
   }catch(e){
@@ -1222,6 +1241,7 @@ $("btnSave").addEventListener("click",async()=>{
     try{
       const res=await fetch(API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({staff:S.staff})});
       if(!res.ok) throw new Error("server responded "+res.status);
+      staffUnsaved=false;
       setStatus(`Saved ${S.staff.length} staff to staff.json.`);
     }catch(e){ setStatus("Could not save to the local server: "+e.message); }
   } else {
@@ -1229,7 +1249,10 @@ $("btnSave").addEventListener("click",async()=>{
   }
 });
 $("btnReload").addEventListener("click",async()=>{
-  if(S.serverMode){ setStatus("Reloading…"); await tryServerLoad(); }
+  if(S.serverMode){
+    if(staffUnsaved && !confirm("You have staff changes that haven't been saved to staff.json. Reloading replaces them with the server's list. Reload anyway?")) return;
+    setStatus("Reloading…"); await tryServerLoad();
+  }
   else { $("btnImport").click(); }
 });
 
@@ -1325,17 +1348,17 @@ function renderRecords(){
     const when=new Date(rec.savedAt).toLocaleString();
     card.innerHTML=`
       <div class="record-head">
-        <strong>${rec.label}</strong>
+        <strong>${esc(rec.label)}</strong>
         <div class="row" style="margin:0;gap:4px;">
-          <button data-act="plot" data-id="${rec.id}" title="Load this record onto the live calendar">Plot</button>
-          <button data-act="view" data-id="${rec.id}">View</button>
-          <button data-act="overwrite" data-id="${rec.id}" title="Replace this record with the current month's live data">Overwrite</button>
-          <button data-act="delete" data-id="${rec.id}" title="Delete this record">Delete</button>
+          <button data-act="plot" data-id="${esc(rec.id)}" title="Load this record onto the live calendar">Plot</button>
+          <button data-act="view" data-id="${esc(rec.id)}">View</button>
+          <button data-act="overwrite" data-id="${esc(rec.id)}" title="Replace this record with the current month's live data">Overwrite</button>
+          <button data-act="delete" data-id="${esc(rec.id)}" title="Delete this record">Delete</button>
         </div>
       </div>
-      <div class="record-meta">${MONTHS[rec.month]} ${rec.year} · saved ${when}</div>
-      <div class="record-summary small">${recordSummary(rec)}</div>
-      <pre class="record-json" data-id="${rec.id}" style="display:none;"></pre>`;
+      <div class="record-meta">${esc(MONTHS[rec.month])} ${esc(rec.year)} · saved ${esc(when)}</div>
+      <div class="record-summary small">${esc(recordSummary(rec))}</div>
+      <pre class="record-json" data-id="${esc(rec.id)}" style="display:none;"></pre>`;
     host.appendChild(card);
   });
   host.querySelectorAll('button[data-act="plot"]').forEach(btn=>{
@@ -1368,7 +1391,7 @@ function renderRecords(){
   });
   host.querySelectorAll('button[data-act="view"]').forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      const pre=host.querySelector(`pre.record-json[data-id="${btn.dataset.id}"]`);
+      const pre=[...host.querySelectorAll("pre.record-json")].find(el=>el.dataset.id===btn.dataset.id);
       const rec=RECORDS.find(r=>r.id===btn.dataset.id);
       const opening=pre.style.display==="none";
       pre.style.display=opening?"block":"none";
@@ -1413,8 +1436,8 @@ function renderCompulsoryStarters(){
   const list=S.compulsoryStarters||(S.compulsoryStarters=[]);
   list.forEach((cs,i)=>{
     const row=document.createElement("div"); row.className="cs-slot";
-    const personOpts=`<option value="">— person —</option>`+S.staff.map(n=>`<option value="${n}" ${cs.person===n?"selected":""}>${n}</option>`).join("");
-    const typeOpts=`<option value="">— shift —</option>`+S.shiftTypes.map(t=>`<option value="${t.id}" ${cs.shiftType===t.id?"selected":""}>${t.name}</option>`).join("");
+    const personOpts=`<option value="">— person —</option>`+S.staff.map(n=>`<option value="${esc(n)}" ${cs.person===n?"selected":""}>${esc(n)}</option>`).join("");
+    const typeOpts=`<option value="">— shift —</option>`+S.shiftTypes.map(t=>`<option value="${esc(t.id)}" ${cs.shiftType===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
     row.innerHTML=`<select data-i="${i}" data-f="person">${personOpts}</select><select data-i="${i}" data-f="shiftType">${typeOpts}</select><button data-i="${i}" title="Remove slot">✕</button>`;
     row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
       list[i][sel.dataset.f]=sel.value||null; save(); renderCompulsoryStarters();
@@ -1840,7 +1863,7 @@ function renderEmailPanel(){
   $("emailMonthLabel").textContent=`${MONTHS[S.month]} ${S.year}`;
   const sel=$("emailPerson");
   const prev=sel.value;
-  sel.innerHTML=S.staff.map(n=>`<option value="${n}">${n}</option>`).join("");
+  sel.innerHTML=S.staff.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
   if(S.staff.includes(prev)) sel.value=prev;
   if(sel.value && EMAILS[sel.value]) $("emailAddress").value=EMAILS[sel.value];
   else if(!prev) $("emailAddress").value="";
@@ -1854,7 +1877,7 @@ function renderEmailPanel(){
       const row=document.createElement("div");
       row.className="row"; row.style.margin="0"; row.style.gap="6px"; row.style.alignItems="center";
       const onFile=S.staff.includes(name);
-      row.innerHTML=`<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}">${name}</span><span class="small" style="flex:2;">${EMAILS[name]}</span><button data-name="${name}" title="Remove this address">✕</button>`;
+      row.innerHTML=`<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}">${esc(name)}</span><span class="small" style="flex:2;">${esc(EMAILS[name])}</span><button data-name="${esc(name)}" title="Remove this address">✕</button>`;
       row.querySelector("button").addEventListener("click", async ()=>{
         delete EMAILS[name]; await persistEmails(); renderEmailPanel();
       });
