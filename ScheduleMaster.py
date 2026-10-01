@@ -8,8 +8,10 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
   PUT  /api/records  -> writes records.json (body: {"records": [...]}) -- full replace,
                         same pattern as /api/staff; the client sends the whole array back
                         each time (e.g. after adding or deleting one record).
-  GET  /api/emails   -> reads emails.json ({"emails": {"Full Name": "addr@example.com", ...}})
-  PUT  /api/emails   -> writes emails.json (body: {"emails": {...}}) -- full replace, same
+  GET  /api/emails   -> reads emails.json ({"emails": {"Full Name": "addr@example.com", ...},
+                        "paused": ["Full Name", ...]} - "paused" = kept out of send-to-everyone)
+  PUT  /api/emails   -> writes emails.json (body: {"emails": {...}, "paused": [...]}; "paused" is
+                        optional - leave it out to keep the current list) -- full replace, same
                         pattern as /api/staff.
   POST /api/send-shifts -> emails each person in emails.json their own dates and shift times
                         for one month. Body: {"year":2026,"month":8,"monthLabel":"September 2026",
@@ -181,14 +183,21 @@ def write_records(data):
 
 def read_emails():
     if not os.path.exists(EMAILS_FILE):
-        return {"emails": {}}
+        return {"emails": {}, "paused": []}
     with open(EMAILS_FILE, "r", encoding="utf-8") as f:
         raw = f.read().strip()
     if not raw:
-        return {"emails": {}}
+        return {"emails": {}, "paused": []}
     data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it, file is left untouched
     if not isinstance(data, dict) or not isinstance(data.get("emails"), dict):
         raise ValueError('emails.json must look like {"emails": {"Full Name": "addr@example.com"}}')
+    # Optional "paused": names whose address is kept but who are left out of "send to everyone".
+    # Absent (every file written before this feature) means nobody is paused. A malformed value is an
+    # error rather than being ignored - silently ignoring it would email people who were turned off.
+    paused = data.get("paused", [])
+    if not isinstance(paused, list) or not all(isinstance(n, str) for n in paused):
+        raise ValueError('"paused" in emails.json must be a list of names')
+    data["paused"] = paused
     return data
 
 
@@ -201,12 +210,27 @@ def write_emails(data):
         addr = str(addr).strip()
         if name and addr:
             cleaned[name] = addr
+    if "paused" in data:
+        paused = data["paused"]
+        if not isinstance(paused, list):
+            raise ValueError('"paused" must be a list of names')
+    else:
+        # a client that doesn't know about pausing (e.g. an older cached page) keeps the current list
+        try:
+            paused = read_emails().get("paused", [])
+        except (OSError, ValueError):
+            paused = []
+    # only people who still have an address can be paused; deleting an address clears its pause too
+    paused = sorted({str(n).strip() for n in paused if str(n).strip() in cleaned})
+    out = {"emails": cleaned}
+    if paused:  # key only written when used, so files stay byte-for-byte the same format otherwise
+        out["paused"] = paused
     # atomic write: temp file then replace, so a crash mid-write can't corrupt emails.json
     tmp = EMAILS_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"emails": cleaned}, f, indent=2)
+        json.dump(out, f, indent=2)
     os.replace(tmp, EMAILS_FILE)
-    return {"emails": cleaned}
+    return {"emails": cleaned, "paused": paused}
 
 
 def read_login():
@@ -936,7 +960,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if palette not in SCREEN_PALETTES:
                 palette = "classic"  # unknown/older client value - fall back rather than fail the whole send
             try:
-                addresses = read_emails()["emails"]
+                email_data = read_emails()
+                addresses = email_data["emails"]
+                paused = set(email_data["paused"])
             except ValueError as e:
                 self._send_json(400, {"error": f"emails.json is unreadable: {e}. Nothing was sent."})
                 return
@@ -947,7 +973,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             sent, skipped, failed = [], [], []
             to_send = []
             for name, addr in addresses.items():
-                if EMAIL_RE.match(addr):
+                if name in paused:
+                    skipped.append({"name": name, "reason": "sending turned off"})
+                elif EMAIL_RE.match(addr):
                     to_send.append((name, addr))
                 else:
                     skipped.append({"name": name, "reason": "invalid email address"})

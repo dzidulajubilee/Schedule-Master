@@ -115,6 +115,25 @@ button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--bord
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
 button:hover{filter:brightness(0.97);}
 button:disabled{opacity:.45;cursor:not-allowed;}
+/* Email list: per-person "include in send to everyone" switch */
+button.mail-toggle{padding:2px 8px;min-width:46px;font-size:11px;font-weight:700;border-radius:999px;}
+button.mail-toggle[aria-pressed="true"]{background:var(--ok-bg);color:var(--ok);border-color:var(--ok);}
+button.mail-toggle[aria-pressed="false"]{background:var(--panel);color:var(--muted);}
+/* In-app confirmation dialog (replaces the browser's confirm() popup) - see askConfirm() */
+#smDialog{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;background:rgba(15,20,28,.45);backdrop-filter:blur(2px);padding:16px;}
+#smDialog.open{display:flex;}
+#smDialog .dlg{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px 22px 18px;}
+#smDialog .dlg-head{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
+#smDialog .dlg-icon{flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;background:var(--ok-bg);color:var(--accent);}
+#smDialog.danger .dlg-icon{background:var(--leave-bg);color:var(--bad);}
+#smDialog h3{margin:0;font-size:16px;}
+#smDialog .dlg-msg{font-size:13.5px;line-height:1.5;margin:0 0 10px 46px;white-space:pre-line;}
+#smDialog .dlg-details{margin:0 0 14px 46px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:12.5px;line-height:1.55;}
+#smDialog .dlg-details:empty{display:none;}
+#smDialog .dlg-details b{font-weight:600;}
+#smDialog .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+#smDialog .dlg-actions button{padding:7px 14px;}
+#smDialog.danger .dlg-ok{background:var(--bad);border-color:var(--bad);color:#fff;}
 input,select{font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);padding:5px 7px;}
 label{font-size:12px;color:var(--muted);}
 table{border-collapse:collapse;width:100%;font-size:12.5px;}
@@ -183,7 +202,7 @@ table.workload td.ok{color:var(--ok);}
 .cs-slot button{flex:0 0 auto;}
 @page{ size: landscape; margin: 9mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#emailPanel,#paletteRow,#loginOverlay{display:none !important;}
+  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#emailPanel,#paletteRow,#loginOverlay,#smDialog{display:none !important;}
   .wrap{display:block;padding:0;}
   .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
   #validationPage{page-break-before:always;}
@@ -222,6 +241,14 @@ table.workload td.ok{color:var(--ok);}
 </head>
 <body>
 
+<div id="smDialog" role="alertdialog" aria-modal="true" aria-labelledby="smDialogTitle" aria-describedby="smDialogMsg">
+  <div class="dlg">
+    <div class="dlg-head"><div class="dlg-icon" aria-hidden="true">?</div><h3 id="smDialogTitle"></h3></div>
+    <p class="dlg-msg" id="smDialogMsg"></p>
+    <div class="dlg-details" id="smDialogDetails"></div>
+    <div class="dlg-actions"><button type="button" class="dlg-cancel">Cancel</button><button type="button" class="primary dlg-ok">OK</button></div>
+  </div>
+</div>
 <div id="loginOverlay">
   <div class="panel" style="width:300px;">
     <h2 style="margin-top:0;">Schedule Master</h2>
@@ -404,6 +431,51 @@ const $=id=>document.getElementById(id);
 // dataset/getAttribute/.value come out un-escaped, so comparisons against S.* data are unaffected.
 const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 
+// In-app confirmation dialog, used instead of the browser's confirm() popup.
+//   const ok = await askConfirm({title, message, details:[[label,value],...], confirmText, danger});
+// Resolves true only when the action button is clicked; Cancel, Esc and clicking outside the card all
+// resolve false - the same outcome confirm() gave for "Cancel". danger:true (actions that can't be undone)
+// shows a red action button and starts keyboard focus on Cancel, so a stray Enter can't confirm it.
+// All text is set with textContent, so names/labels are never interpreted as HTML.
+let closeOpenDialog=null;
+function askConfirm({title, message="", details=[], confirmText="OK", danger=false}){
+  if(closeOpenDialog) closeOpenDialog(false); // only one dialog at a time; an older one counts as cancelled
+  const box=$("smDialog");
+  const okBtn=box.querySelector(".dlg-ok"), cancelBtn=box.querySelector(".dlg-cancel");
+  box.classList.toggle("danger", !!danger);
+  box.querySelector(".dlg-icon").textContent=danger?"!":"?";
+  $("smDialogTitle").textContent=title;
+  $("smDialogMsg").textContent=message;
+  const det=$("smDialogDetails"); det.textContent="";
+  details.filter(d=>d && d[1]!=null && d[1]!=="").forEach(([label,value])=>{
+    const row=document.createElement("div"), b=document.createElement("b");
+    b.textContent=label+": "; row.appendChild(b); row.appendChild(document.createTextNode(String(value))); det.appendChild(row);
+  });
+  okBtn.textContent=confirmText;
+  const returnFocus=document.activeElement;
+  box.classList.add("open");
+  (danger?cancelBtn:okBtn).focus();
+  return new Promise(resolve=>{
+    const finish=result=>{
+      box.classList.remove("open");
+      okBtn.onclick=cancelBtn.onclick=box.onmousedown=box.onkeydown=null;
+      closeOpenDialog=null;
+      if(returnFocus && document.contains(returnFocus) && returnFocus.focus) returnFocus.focus();
+      resolve(result);
+    };
+    closeOpenDialog=finish;
+    okBtn.onclick=()=>finish(true);
+    cancelBtn.onclick=()=>finish(false);
+    box.onmousedown=e=>{ if(e.target===box) finish(false); }; // click on the dimmed backdrop
+    box.onkeydown=e=>{
+      if(e.key==="Escape"){ e.preventDefault(); finish(false); }
+      else if(e.key==="Tab"){ // keep keyboard focus inside the dialog
+        e.preventDefault(); (document.activeElement===okBtn?cancelBtn:okBtn).focus();
+      }
+    };
+  });
+}
+
 // ---------- login (session-cookie auth against the local server) ----------
 // A global fetch wrapper rather than touching every individual api call: if the server ever answers
 // 401 (login required, or a session that's expired), pop the login overlay back up regardless of which
@@ -530,8 +602,10 @@ function load(){
   return defaultState();
 }
 function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} }
-$("btnResetAll").addEventListener("click",()=>{
-  if(!confirm("This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. staff.json on disk is untouched. This can't be undone. Continue?")) return;
+$("btnResetAll").addEventListener("click",async()=>{
+  if(!await askConfirm({title:"Reset all data in this browser?", danger:true, confirmText:"Reset everything",
+    message:"This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. This can't be undone.",
+    details:[["Not affected","staff.json, records.json and emails.json on the server"]]})) return;
   try{ localStorage.removeItem("schedulemaster_state"); localStorage.removeItem("planthat_state"); }catch(e){}
   location.reload();
 });
@@ -649,7 +723,12 @@ function renderStaff(){
   S.staff.forEach(name=>{
     const li=document.createElement("li"); li.className="pill";
     li.innerHTML=`${esc(name)}<button title="Remove">✕</button>`;
-    li.querySelector("button").addEventListener("click",()=>{
+    li.querySelector("button").addEventListener("click",async()=>{
+      const leaveDays=(S.leave[name]||[]).length;
+      const shiftCount=Object.values(S.shifts).filter(day=>day && day[name]).length;
+      if(!await askConfirm({title:`Remove ${name} from staff?`, danger:true, confirmText:"Remove",
+        message:"This removes them from the staff list and deletes their leave and plotted shifts in every month in this browser. Their keep-apart and compulsory-starter slots are cleared. (Click Save afterwards to update staff.json.)",
+        details:[["Leave days",leaveDays],["Plotted shifts",shiftCount]]})) return;
       S.staff=S.staff.filter(n=>n!==name);
       delete S.leave[name];
       for(const d in S.shifts) delete S.shifts[d][name];
@@ -837,10 +916,12 @@ $("leaveAdd").addEventListener("click",()=>{
   leaveStagedKey=null; // re-derive from the saved state (including the auto-added weekends) next render
   save(); setStatus(`Saved leave for ${person} this month: ${checkedDates.length} day(s) on leave.`); renderAll();
 });
-$("leaveClearPerson").addEventListener("click",()=>{
+$("leaveClearPerson").addEventListener("click",async()=>{
   const person=$("leavePerson").value; if(!person){ setStatus("Pick a person first."); return; }
   if(!S.leave[person] || !S.leave[person].length){ setStatus(`${person} has no leave recorded.`); return; }
-  if(!confirm(`Remove ALL recorded leave for ${person}, across every month? This can't be undone.`)) return;
+  if(!await askConfirm({title:"Remove all leave?", danger:true, confirmText:"Remove all leave",
+    message:`Remove ALL recorded leave for ${person}, across every month? This can't be undone.`,
+    details:[["Person",person],["Leave days on record",S.leave[person].length]]})) return;
   delete S.leave[person];
   leaveStagedKey=null;
   save(); setStatus(`Cleared all leave for ${person}.`); renderAll();
@@ -910,7 +991,7 @@ $("mpSelectAll").addEventListener("click",()=>{
 });
 $("mpClearSel").addEventListener("click",()=>{ mpSelected.clear(); renderManualCalendar(); });
 
-$("mpApply").addEventListener("click",()=>{
+$("mpApply").addEventListener("click",async()=>{
   const person=$("mpPerson").value;
   const typeId=(document.querySelector('input[name=mpType]:checked')||{}).value||"";
   if(!person){ setStatus("Pick a person first."); return; }
@@ -930,7 +1011,8 @@ $("mpApply").addEventListener("click",()=>{
   });
   if(softClashes.length){
     const msg=softClashes.map(x=>`${x.ds} — ${x.reason}`).join("\n");
-    if(confirm(`${softClashes.length} of the selected day(s) have a soft keep-apart clash:\n\n${msg}\n\nPlace them anyway?`)){
+    if(await askConfirm({title:"Keep-apart clash", confirmText:"Place them anyway",
+      message:`${softClashes.length} of the selected day(s) have a soft keep-apart clash:\n\n${msg}\n\nPlace them anyway? (Cancel places only the days without a clash.)`})){
       softClashes.forEach(x=>{ setPersonShift(x.ds,person,typeId); applied++; });
     }
   }
@@ -985,8 +1067,10 @@ $("selYear").addEventListener("change",()=>{ S.year=Number($("selYear").value)||
 $("viewSel").addEventListener("change",()=>{ S.view=$("viewSel").value; save(); renderCalendar(); });
 $("showCounts").addEventListener("change",()=>{ S.showCounts=$("showCounts").checked; save(); renderCalendar(); });
 $("printCoverage").addEventListener("change",()=>{ S.includeCoverageInPrint=$("printCoverage").checked; save(); renderCoverage(); });
-$("btnClear").addEventListener("click",()=>{
-  if(!confirm("Clear all shifts for this month?")) return;
+$("btnClear").addEventListener("click",async()=>{
+  if(!await askConfirm({title:"Clear this month?", danger:true, confirmText:"Clear month",
+    message:"Clear all shifts for this month? Leave and other months are not affected.",
+    details:[["Month",`${MONTHS[S.month]} ${S.year}`]]})) return;
   const n=daysInMonth(S.year,S.month);
   for(let d=1; d<=n; d++) delete S.shifts[ymd(S.year,S.month,d)];
   save(); renderAll();
@@ -1079,8 +1163,14 @@ function renderCalendar(){
     }
     html+="</div>";
     cell.innerHTML=html;
-    cell.querySelectorAll(".chip[data-p]").forEach(chip=>chip.addEventListener("click",()=>{
-      setPersonShift(chip.dataset.d,chip.dataset.p,null); save(); renderAll();
+    cell.querySelectorAll(".chip[data-p]").forEach(chip=>chip.addEventListener("click",async()=>{
+      const who=chip.dataset.p, day=chip.dataset.d;
+      const t=shiftById((S.shifts[day]||{})[who]);
+      const [yy,mm,dd]=day.split("-").map(Number);
+      if(!await askConfirm({title:"Remove this shift?", danger:true, confirmText:"Remove shift",
+        message:"The shift is taken off the calendar. You can plot it again with Manual Plot.",
+        details:[["Person",who],["Date",`${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekdayOf(yy,mm-1,dd)]} ${dd} ${MONTHS[mm-1]} ${yy}`],["Shift",t?t.name:""]]})) return;
+      setPersonShift(day,who,null); save(); renderAll();
     }));
     addCell(cell);
   }
@@ -1250,7 +1340,8 @@ $("btnSave").addEventListener("click",async()=>{
 });
 $("btnReload").addEventListener("click",async()=>{
   if(S.serverMode){
-    if(staffUnsaved && !confirm("You have staff changes that haven't been saved to staff.json. Reloading replaces them with the server's list. Reload anyway?")) return;
+    if(staffUnsaved && !await askConfirm({title:"Discard unsaved staff changes?", danger:true, confirmText:"Reload anyway",
+      message:"You have staff changes that haven't been saved to staff.json. Reloading replaces them with the server's list. Click Cancel, then Save, to keep them."})) return;
     setStatus("Reloading…"); await tryServerLoad();
   }
   else { $("btnImport").click(); }
@@ -1362,16 +1453,20 @@ function renderRecords(){
     host.appendChild(card);
   });
   host.querySelectorAll('button[data-act="plot"]').forEach(btn=>{
-    btn.addEventListener("click", ()=>{
+    btn.addEventListener("click", async ()=>{
       const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
-      if(!confirm(`Load "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) onto the live calendar?\n\nThis replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (this record itself is untouched either way).`)) return;
+      if(!await askConfirm({title:"Load this record onto the calendar?", confirmText:"Load record",
+        message:`This replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (the record itself is untouched either way).`,
+        details:[["Record",rec.label],["Month",`${MONTHS[rec.month]} ${rec.year}`]]})) return;
       plotRecord(rec);
     });
   });
   host.querySelectorAll('button[data-act="overwrite"]').forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
-      if(!confirm(`Overwrite the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year}) with what's currently live (${MONTHS[S.month]} ${S.year})? This replaces its saved staff, shift types, keep-apart pairs, leave, shifts and settings — the old snapshot can't be recovered.`)) return;
+      if(!await askConfirm({title:"Overwrite saved record?", danger:true, confirmText:"Overwrite",
+        message:"This replaces the record's saved staff, shift types, keep-apart pairs, leave, shifts and settings with what's live now — the old snapshot can't be recovered.",
+        details:[["Record",`${rec.label} (${MONTHS[rec.month]} ${rec.year})`],["Replaced with",`${MONTHS[S.month]} ${S.year} (live)`]]})) return;
       const fresh=snapshotNow(rec.label);
       rec.label=fresh.label; rec.savedAt=fresh.savedAt; rec.year=fresh.year; rec.month=fresh.month; rec.data=fresh.data;
       await persistRecords();
@@ -1382,7 +1477,9 @@ function renderRecords(){
   host.querySelectorAll('button[data-act="delete"]').forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
-      if(!confirm(`Delete the saved record "${rec.label}" (${MONTHS[rec.month]} ${rec.year})? This can't be undone.`)) return;
+      if(!await askConfirm({title:"Delete saved record?", danger:true, confirmText:"Delete record",
+        message:"This permanently removes the record from the saved records. It can't be undone.",
+        details:[["Record",rec.label],["Month",`${MONTHS[rec.month]} ${rec.year}`]]})) return;
       RECORDS=RECORDS.filter(r=>r.id!==rec.id);
       await persistRecords();
       renderRecords();
@@ -1827,12 +1924,20 @@ const EMAILS_API="api/emails";
 const SEND_API="api/send-shifts";
 let EMAILS={};
 let emailsServerMode=false;
+// names whose address is kept but who are left out of "send to everyone" (the On/Off button per row).
+// Stored with the addresses (emails.json "paused", or this browser's storage when there's no server);
+// the server itself skips them when sending, so the page can't send to them by mistake.
+let PAUSED=[];
 
 function loadEmailsLocal(){
   try{ const raw=localStorage.getItem("schedulemaster_emails"); if(raw){ const v=JSON.parse(raw); if(v&&typeof v==="object") return v; } }catch(e){}
   return {};
 }
-function saveEmailsLocal(){ try{ localStorage.setItem("schedulemaster_emails", JSON.stringify(EMAILS)); }catch(e){} }
+function saveEmailsLocal(){ try{ localStorage.setItem("schedulemaster_emails", JSON.stringify(EMAILS)); localStorage.setItem("schedulemaster_emails_paused", JSON.stringify(PAUSED)); }catch(e){} }
+function loadPausedLocal(){
+  try{ const v=JSON.parse(localStorage.getItem("schedulemaster_emails_paused")||"[]"); if(Array.isArray(v)) return v.filter(n=>typeof n==="string"); }catch(e){}
+  return [];
+}
 
 async function tryServerLoadEmails(){
   try{
@@ -1841,18 +1946,22 @@ async function tryServerLoadEmails(){
     const data=await res.json();
     if(!data.emails||typeof data.emails!=="object") throw new Error("emails.json is not in the expected {\"emails\":{...}} form");
     EMAILS=data.emails;
+    PAUSED=Array.isArray(data.paused)?data.paused:[];
     emailsServerMode=true;
   }catch(e){
     emailsServerMode=false;
     EMAILS=loadEmailsLocal();
+    PAUSED=loadPausedLocal();
   }
   renderEmailPanel();
 }
 async function persistEmails(){
   if(emailsServerMode){
     try{
-      const res=await fetch(EMAILS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({emails:EMAILS})});
+      const res=await fetch(EMAILS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({emails:EMAILS,paused:PAUSED})});
       if(!res.ok) throw new Error("server responded "+res.status);
+      const saved=await res.json().catch(()=>null);
+      if(saved && Array.isArray(saved.paused)) PAUSED=saved.paused; // server is the source of truth
     }catch(e){ setStatus("Could not save emails to the local server: "+e.message); }
   } else {
     saveEmailsLocal();
@@ -1877,12 +1986,26 @@ function renderEmailPanel(){
       const row=document.createElement("div");
       row.className="row"; row.style.margin="0"; row.style.gap="6px"; row.style.alignItems="center";
       const onFile=S.staff.includes(name);
-      row.innerHTML=`<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}">${esc(name)}</span><span class="small" style="flex:2;">${esc(EMAILS[name])}</span><button data-name="${esc(name)}" title="Remove this address">✕</button>`;
-      row.querySelector("button").addEventListener("click", async ()=>{
-        delete EMAILS[name]; await persistEmails(); renderEmailPanel();
+      const on=!PAUSED.includes(name);
+      row.innerHTML=`<button type="button" class="mail-toggle" aria-pressed="${on}" title="${on?"On: included when you send to everyone. Click to turn off for this person.":"Off: skipped when you send to everyone (address is kept). Click to turn back on."}">${on?"On":"Off"}</button>`+
+        `<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}${on?"":"opacity:.55;"}">${esc(name)}</span><span class="small" style="flex:2;${on?"":"opacity:.55;"}">${esc(EMAILS[name])}</span><button type="button" data-name="${esc(name)}" title="Remove this address">✕</button>`;
+      row.querySelector("button.mail-toggle").addEventListener("click", async ()=>{
+        PAUSED=on ? [...PAUSED, name] : PAUSED.filter(n=>n!==name);
+        await persistEmails(); renderEmailPanel();
+        setStatus(on?`${name} is turned off — they won't be emailed when you send to everyone.`:`${name} is turned back on for sending.`);
+      });
+      row.querySelector("button[data-name]").addEventListener("click", async ()=>{
+        if(!await askConfirm({title:"Remove saved email address?", danger:true, confirmText:"Remove address",
+          message:"They won't be emailed until an address is saved for them again.",
+          details:[["Person",name],["Address",EMAILS[name]]]})) return;
+        delete EMAILS[name]; PAUSED=PAUSED.filter(n=>n!==name); await persistEmails(); renderEmailPanel();
       });
       host.appendChild(row);
     });
+    const offCount=names.filter(n=>PAUSED.includes(n)).length;
+    const note=document.createElement("div"); note.className="small";
+    note.textContent=offCount?`${names.length-offCount} of ${names.length} will be emailed — ${offCount} turned off.`:`All ${names.length} will be emailed.`;
+    host.appendChild(note);
   }
   $("emailSend").disabled=!emailsServerMode;
   $("emailSend").title=emailsServerMode?"":"Sending needs ScheduleMaster.py running as your local server — it's the part that actually talks to your mail relay.";
@@ -1904,18 +2027,27 @@ $("emailSave").addEventListener("click", async ()=>{
 $("emailDelete").addEventListener("click", async ()=>{
   const name=$("emailPerson").value;
   if(!name||!EMAILS[name]){ setStatus("That person doesn't have a saved address."); return; }
+  if(!await askConfirm({title:"Remove saved email address?", danger:true, confirmText:"Remove address",
+    message:"They won't be emailed until an address is saved for them again.",
+    details:[["Person",name],["Address",EMAILS[name]]]})) return;
   delete EMAILS[name];
+  PAUSED=PAUSED.filter(n=>n!==name);
   await persistEmails();
   renderEmailPanel();
   setStatus(`Removed the saved address for ${name}.`);
 });
 $("emailSend").addEventListener("click", async ()=>{
   if(!emailsServerMode) return;
-  const names=Object.keys(EMAILS);
-  if(!names.length){ setStatus("No saved addresses to send to."); return; }
+  const allNames=Object.keys(EMAILS);
+  if(!allNames.length){ setStatus("No saved addresses to send to."); return; }
+  const names=allNames.filter(n=>!PAUSED.includes(n));
+  const offNames=allNames.filter(n=>PAUSED.includes(n));
+  if(!names.length){ setStatus("Everyone with a saved address is turned off — turn at least one person On to send."); return; }
   const monthLabel=`${MONTHS[S.month]} ${S.year}`;
   const paletteName=(PALETTES.find(p=>p.id===(S.palette||"classic"))||{}).name||"Classic";
-  if(!confirm(`Email each person their own shifts for ${monthLabel}?\n\nThis sends ${names.length} separate email(s), one per saved address, through the mail relay configured in ScheduleMaster.py. Each person only sees their own dates, and each gets a PDF and a calendar (.ics) file attached, colored to match the "${paletteName}" scheme that's active right now.`)) return;
+  if(!await askConfirm({title:`Send ${monthLabel} shifts?`, confirmText:`Send ${names.length} email${names.length===1?"":"s"}`,
+    message:`Each person gets one email with only their own dates, plus a PDF and a calendar (.ics) file colored in the "${paletteName}" scheme that's active right now. Emails go out through the mail relay configured in ScheduleMaster.py.`,
+    details:[["Sending to",`${names.length} ${names.length===1?"person":"people"}`],["Turned off — will NOT be emailed",offNames.join(", ")]]})) return;
   const monthShifts={};
   for(const d in S.shifts){
     const [yy,mm]=d.split("-").map(Number);
