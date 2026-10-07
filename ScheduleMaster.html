@@ -16,15 +16,19 @@
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
-@media (prefers-color-scheme:dark){
+@media screen and (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
     --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
   }
 }
+/* dark theme is screen-only (also in the @media blocks above/below): printing always uses the light
+   version of the chosen scheme, since a dark page background would print as a near-black sheet */
+@media screen{
 :root[data-theme="dark"]{
   --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
   --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
+}
 }
 /* ---- selectable calendar color schemes (§ palette swatches near the calendar) ----
    each scheme restates ink+bg for light mode, then just the (darker) bg for dark mode,
@@ -93,18 +97,20 @@
   --chip-3:#eaf2ff; --chip-3-bg:#1f3a5f;
   --leave:#ffffff; --leave-bg:#e8514f;
 }
-@media (prefers-color-scheme:dark){
+@media screen and (prefers-color-scheme:dark){
   :root[data-palette="ocean"]:not([data-theme="light"]){ --chip-1-bg:#123236; --chip-2-bg:#16233d; --chip-3-bg:#1c2e2e; --leave-bg:#3a1e19; }
   :root[data-palette="sunset"]:not([data-theme="light"]){ --chip-1-bg:#3a1620; --chip-2-bg:#3a2a12; --chip-3-bg:#2c1c3a; --leave-bg:#331713; }
   :root[data-palette="forest"]:not([data-theme="light"]){ --chip-1-bg:#163a1d; --chip-2-bg:#332a14; --chip-3-bg:#163232; --leave-bg:#3a1e19; }
   :root[data-palette="berry"]:not([data-theme="light"]){ --chip-1-bg:#3a1626; --chip-2-bg:#241c3a; --chip-3-bg:#16233d; --leave-bg:#2e120d; }
   :root[data-palette="slate"]:not([data-theme="light"]){ --chip-1-bg:#1c2f42; --chip-2-bg:#33241a; --chip-3-bg:#17322f; --leave-bg:#331a15; }
 }
+@media screen{
 :root[data-palette="ocean"][data-theme="dark"]{ --chip-1-bg:#123236; --chip-2-bg:#16233d; --chip-3-bg:#1c2e2e; --leave-bg:#3a1e19; }
 :root[data-palette="sunset"][data-theme="dark"]{ --chip-1-bg:#3a1620; --chip-2-bg:#3a2a12; --chip-3-bg:#2c1c3a; --leave-bg:#331713; }
 :root[data-palette="forest"][data-theme="dark"]{ --chip-1-bg:#163a1d; --chip-2-bg:#332a14; --chip-3-bg:#163232; --leave-bg:#3a1e19; }
 :root[data-palette="berry"][data-theme="dark"]{ --chip-1-bg:#3a1626; --chip-2-bg:#241c3a; --chip-3-bg:#16233d; --leave-bg:#2e120d; }
 :root[data-palette="slate"][data-theme="dark"]{ --chip-1-bg:#1c2f42; --chip-2-bg:#33241a; --chip-3-bg:#17322f; --leave-bg:#331a15; }
+}
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;}
@@ -136,6 +142,29 @@ button.mail-toggle[aria-pressed="false"]{background:var(--panel);color:var(--mut
 #smDialog.danger .dlg-ok{background:var(--bad);border-color:var(--bad);color:#fff;}
 input,select{font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);padding:5px 7px;}
 label{font-size:12px;color:var(--muted);}
+/* Modern checkboxes (all 6: print options, the two rule settings, Flexible / Keep-apart per shift type).
+   Purely visual: each stays a real <input type="checkbox">, so label clicks, keyboard (Space/Tab),
+   .checked and change events behave exactly as before. Colours come from the theme variables, so they
+   follow light/dark mode and the app's accent instead of the browser's default blue. */
+input[type=checkbox]{
+  -webkit-appearance:none; appearance:none; flex:none;
+  width:18px; height:18px; margin:0; padding:0; vertical-align:-4px;
+  display:inline-grid; place-content:center; cursor:pointer;
+  border:1.5px solid var(--muted); border-color:color-mix(in srgb, var(--muted) 55%, transparent);
+  border-radius:5px; background:var(--panel);
+  transition:background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+input[type=checkbox]::before{ /* the tick: drawn with a clip-path, scaled in when checked */
+  content:""; width:11px; height:11px; background:var(--accent-ink);
+  clip-path:polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+  transform:scale(0); transition:transform .12s ease-in-out;
+}
+input[type=checkbox]:hover:not(:disabled){border-color:var(--accent);}
+input[type=checkbox]:checked{background:var(--accent); border-color:var(--accent);}
+input[type=checkbox]:checked::before{transform:scale(1);}
+input[type=checkbox]:focus-visible{outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);}
+input[type=checkbox]:disabled{opacity:.45; cursor:not-allowed;}
+label:has(> input[type=checkbox]){cursor:pointer;}
 table{border-collapse:collapse;width:100%;font-size:12.5px;}
 th,td{border:1px solid var(--border);padding:5px 7px;text-align:left;}
 th{background:var(--bg);font-weight:600;}
@@ -155,6 +184,7 @@ th{background:var(--bg);font-weight:600;}
 .shifttype-row input[type=text],.shifttype-row input[type=time]{width:100%;padding:3px 4px;}
 .shifttype-row input[type=number]{width:100%;padding:3px 2px;text-align:center;}
 .shifttype-row>span{white-space:normal;line-height:1.15;text-align:center;}
+.shifttype-row>input[type=checkbox]{justify-self:center;} /* fixed-size modern checkbox: keep it centred under its column heading */
 .calwrap{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;}
 .calhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
 .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:12px;}
@@ -211,17 +241,12 @@ table.workload td.ok{color:var(--ok);}
   #coverageSection.hideprint{display:none;}
   /* force the browser to actually print background colors instead of silently dropping them */
   *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}
-  /* deeper, more saturated palette for print only - the on-screen pastel tones (classic/ocean/sunset/
-     forest/berry/slate) read as washed-out on paper, so they're forced into these fixed print-safe
-     colors. Any "deep" family scheme (data-palette starting with "deep") is already saturated enough to
-     print as-is, so it's excluded here and prints exactly as selected on screen. !important is needed
-     because a selected on-screen scheme (:root[data-palette="x"]) has higher CSS specificity than this
-     plain :root rule and would otherwise win even inside @media print. */
+  /* every colour scheme prints in its own colours (the light-mode version - dark mode is screen-only,
+     see the top of this stylesheet). Previously the six light schemes were all replaced on paper by
+     one fixed "print-safe" set, so choosing Ocean, Sunset etc. made no difference to the printout.
+     Chips keep the thin dark outline below so pale chips stay distinct on paper. Only the day-cell
+     border is darkened for paper on the light schemes, as before (the deep schemes keep theirs). */
   :root:not([data-palette^="deep"]){
-    --chip-1:#0d3fb0 !important; --chip-1-bg:#b9cdf7 !important;
-    --chip-2:#8a4400 !important; --chip-2-bg:#f0c98a !important;
-    --chip-3:#3a1f99 !important; --chip-3-bg:#cabdf0 !important;
-    --leave:#8f1710 !important; --leave-bg:#f2b3ac !important;
     --border:#8a8578 !important;
   }
   .chip{font-weight:700;border:1px solid rgba(0,0,0,.25);font-size:9px;padding:0 4px;margin-top:1px;}

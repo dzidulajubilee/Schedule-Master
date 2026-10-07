@@ -97,8 +97,9 @@ Everything lives in a single in-memory state object, `S`, saved to `localStorage
 A row of swatch buttons next to the calendar switches between 10 color schemes: **Classic** (the default), **Ocean**, **Sunset**, **Forest**, **Berry**, **Slate**, **Deep**, **Deep Bold**, **Deep Emerald**, and **Deep Crimson**. The choice is purely cosmetic — it never affects rules or planning — and is saved per browser (in `S.palette`, `localStorage`), not shared between people.
 
 - Whichever shift type sits at position 1, 4, 7… in the shift-types list gets the scheme's first color; position 2, 5, 8… gets the second; position 3, 6, 9… gets the third. Leave always gets the scheme's own dedicated color, separate from the three shift-type colors.
-- **On screen**, all 10 schemes show their own distinct pastel or bold tones — and so does **everything in the shift email** (§10), both the message body and the attached PDF: they use exactly the same colors as the app's calendar for whichever scheme was active when you clicked Send, pastel schemes included.
-- **The Print / PDF button** (§7) is the one exception: there, the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) are all flattened to one fixed, high-contrast set instead of their on-screen pastel tones, because pale tints wash out badly once printed. The four "deep" schemes are already saturated enough to survive printing, so they print exactly as chosen on screen. The emailed PDF does *not* do this flattening — it always reproduces the chosen scheme exactly — so if a recipient prints it, a pastel scheme will print paler than the app's own printout; pick a "deep" scheme before sending if people will mostly print it.
+- **Everywhere — on screen, on the Print / PDF button (§7) and in the shift email (§10)** — all 10 schemes keep their own colors: whichever scheme is active is exactly what you see, print and send, pastel schemes included.
+- **Dark mode is screen-only.** If your device is in dark mode the calendar uses darker backgrounds on screen, but printing always uses the light version of the chosen scheme on a light page, so a printout never comes out as a near-black sheet.
+- **Pale schemes on paper:** the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) print in their soft on-screen tones; each chip has a thin dark outline so it stays distinct, but if the printer is weak or prints greyscale, one of the four "deep" schemes gives stronger contrast.
 
 ---
 
@@ -287,7 +288,7 @@ Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so
 
 ## 7. Printing
 
-Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. As covered in *Color schemes* above, a separate, more saturated set of colors is swapped in for print for the six pastel schemes so shift colors don't wash out on paper — the "deep" schemes print as chosen. The emailed PDF (§10) does not follow this rule — it keeps the chosen scheme's exact colors (see *Color schemes*).
+Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. Every color scheme prints in its own colors, the light-mode version even when the device is in dark mode (see *Color schemes* above); earlier versions replaced the six pastel schemes with one fixed print set, so they all printed alike.
 
 The Email panel (with everyone's saved addresses) is never printed, just like the Saved records and Compulsory starters panels.
 
