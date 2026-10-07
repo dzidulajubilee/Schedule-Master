@@ -12,8 +12,6 @@ Either way, the app itself always talks to the same `ScheduleMaster.py` server â
 
 ![Schedule Master system architecture: browser page with the planning engine, nginx and the hardened Python service on the Linux VM, JSON data files and the mail relay](docs/images/1-architecture-stack.png)
 
-All diagrams in this README come from one editable draw.io file, [`docs/ScheduleMaster-architecture.drawio`](docs/ScheduleMaster-architecture.drawio) (open it at app.diagrams.net or in the draw.io desktop app; each page is a tab). The PNGs in [`docs/images/`](docs/images/) are exports of its pages â€” after editing a page, re-export it over the matching PNG.
-
 ---
 
 ## How to run (personal / local use)
