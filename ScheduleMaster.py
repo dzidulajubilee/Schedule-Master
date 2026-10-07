@@ -4,10 +4,12 @@ Schedule Master local server.
 Serves ScheduleMaster.html and its companion files from this folder, and exposes:
   GET  /api/staff    -> reads staff.json ({"staff": [...]})
   PUT  /api/staff    -> writes staff.json (body: {"staff": [...]})
-  GET  /api/records  -> reads records.json ({"records": [...]})
-  PUT  /api/records  -> writes records.json (body: {"records": [...]}) -- full replace,
-                        same pattern as /api/staff; the client sends the whole array back
-                        each time (e.g. after adding or deleting one record).
+  GET  /api/records  -> reads records.json ({"records": [...], "version": "<fingerprint>"})
+  PUT  /api/records  -> writes records.json (body: {"records": [...], "baseVersion": "<fingerprint>"})
+                        -- full replace, same pattern as /api/staff; the client sends the whole array
+                        back each time (e.g. after adding or deleting one record). If baseVersion is
+                        sent and records.json changed since, nothing is written: 409 with the current
+                        {"records", "version"}. Without baseVersion (older pages) it writes as before.
   GET  /api/emails   -> reads emails.json ({"emails": {"Full Name": "addr@example.com", ...},
                         "paused": ["Full Name", ...]} - "paused" = kept out of send-to-everyone)
   PUT  /api/emails   -> writes emails.json (body: {"emails": {...}, "paused": [...]}; "paused" is
@@ -156,29 +158,60 @@ def write_staff(data):
     return {"staff": sorted(names)}
 
 
-def read_records():
+# records.json is saved as a whole list, so a page holding an out-of-date copy (a tab opened earlier, or
+# another person) could otherwise erase records saved since it loaded. Every read returns a "version"
+# (a fingerprint of the file's contents); a PUT that sends the version it started from is refused with
+# 409 if the file has changed since, and gets the current list back instead. A PUT without a version
+# (an older cached copy of the page) is still accepted as before. RECORDS_LOCK makes check+write atomic.
+RECORDS_LOCK = threading.Lock()
+
+
+class RecordsConflict(Exception):
+    def __init__(self, current):
+        super().__init__("records changed since this page loaded them")
+        self.current = current
+
+
+def _records_raw():
     if not os.path.exists(RECORDS_FILE):
-        return {"records": []}
-    with open(RECORDS_FILE, "r", encoding="utf-8") as f:
-        raw = f.read().strip()
+        return b""
+    with open(RECORDS_FILE, "rb") as f:
+        return f.read()
+
+
+def _records_version(raw):
+    import hashlib
+    return hashlib.sha256(raw.strip()).hexdigest()[:16]
+
+
+def read_records():
+    raw_bytes = _records_raw()
+    version = _records_version(raw_bytes)
+    raw = raw_bytes.decode("utf-8").strip()
     if not raw:
-        return {"records": []}
+        return {"records": [], "version": version}
     data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it, file is left untouched
     if not isinstance(data, dict) or not isinstance(data.get("records"), list):
         raise ValueError('records.json must look like {"records": [...]}')
-    return data
+    return {"records": data["records"], "version": version}
 
 
 def write_records(data):
     if not isinstance(data, dict) or not isinstance(data.get("records"), list):
         raise ValueError('Expected {"records": [...]}')
-    # full replace, same as staff: the client already merged its add/delete into the array
-    # it sends. Atomic write: temp file then replace, so a crash mid-write can't corrupt records.json
-    tmp = RECORDS_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"records": data["records"]}, f, indent=2)
-    os.replace(tmp, RECORDS_FILE)
-    return {"records": data["records"]}
+    with RECORDS_LOCK:
+        base = data.get("baseVersion")
+        if base is not None:
+            current = read_records()  # raises ValueError if records.json is unreadable -> nothing written
+            if base != current["version"]:
+                raise RecordsConflict(current)
+        # full replace, same as staff: the client already merged its add/delete into the array
+        # it sends. Atomic write: temp file then replace, so a crash mid-write can't corrupt records.json
+        tmp = RECORDS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"records": data["records"]}, f, indent=2)
+        os.replace(tmp, RECORDS_FILE)
+        return {"records": data["records"], "version": _records_version(_records_raw())}
 
 
 def read_emails():
@@ -879,6 +912,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 data = json.loads(body.decode("utf-8"))
                 result = write_records(data)
                 self._send_json(200, result)
+            except RecordsConflict as e:
+                self._send_json(409, {"error": str(e), "records": e.current["records"], "version": e.current["version"]})
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
             except Exception as e:

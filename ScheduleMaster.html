@@ -438,7 +438,7 @@ const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").rep
 // shows a red action button and starts keyboard focus on Cancel, so a stray Enter can't confirm it.
 // All text is set with textContent, so names/labels are never interpreted as HTML.
 let closeOpenDialog=null;
-function askConfirm({title, message="", details=[], confirmText="OK", danger=false}){
+function askConfirm({title, message="", details=[], confirmText="OK", danger=false, cancelText="Cancel"}){
   if(closeOpenDialog) closeOpenDialog(false); // only one dialog at a time; an older one counts as cancelled
   const box=$("smDialog");
   const okBtn=box.querySelector(".dlg-ok"), cancelBtn=box.querySelector(".dlg-cancel");
@@ -452,9 +452,11 @@ function askConfirm({title, message="", details=[], confirmText="OK", danger=fal
     b.textContent=label+": "; row.appendChild(b); row.appendChild(document.createTextNode(String(value))); det.appendChild(row);
   });
   okBtn.textContent=confirmText;
+  cancelBtn.hidden=(cancelText===null); // cancelText:null = information-only notice with a single button
+  if(cancelText!==null) cancelBtn.textContent=cancelText;
   const returnFocus=document.activeElement;
   box.classList.add("open");
-  (danger?cancelBtn:okBtn).focus();
+  (danger && !cancelBtn.hidden?cancelBtn:okBtn).focus();
   return new Promise(resolve=>{
     const finish=result=>{
       box.classList.remove("open");
@@ -470,7 +472,7 @@ function askConfirm({title, message="", details=[], confirmText="OK", danger=fal
     box.onkeydown=e=>{
       if(e.key==="Escape"){ e.preventDefault(); finish(false); }
       else if(e.key==="Tab"){ // keep keyboard focus inside the dialog
-        e.preventDefault(); (document.activeElement===okBtn?cancelBtn:okBtn).focus();
+        e.preventDefault(); (document.activeElement===okBtn && !cancelBtn.hidden?cancelBtn:okBtn).focus();
       }
     };
   });
@@ -1304,6 +1306,10 @@ S.serverMode=false;
 // Staff edits (add/remove/import) only reach staff.json when Save is clicked; Reload (and the next page
 // load) replace the list with what's on the server. Track unsaved edits so they aren't lost silently.
 let staffUnsaved=false;
+// Set while the staff list on screen came from a loaded (Plot) saved record rather than staff.json - e.g.
+// it still includes someone who has since left. Save then asks before writing that list to staff.json;
+// Reload simply returns to the current list.
+let staffFromRecord=null;
 function noteStaffUnsaved(what){
   if(!S.serverMode) return; // browser-only mode: nothing on a server to diverge from
   staffUnsaved=true;
@@ -1318,6 +1324,7 @@ async function tryServerLoad(){
     S.staff=[...new Set(data.staff.map(n=>String(n).trim()).filter(Boolean))].sort();
     S.serverMode=true;
     staffUnsaved=false;
+    staffFromRecord=null;
     save(); renderAll();
     setStatus(`Loaded ${S.staff.length} staff from staff.json (local server).`);
   }catch(e){
@@ -1328,10 +1335,24 @@ async function tryServerLoad(){
 }
 $("btnSave").addEventListener("click",async()=>{
   if(S.serverMode){
+    if(staffFromRecord){
+      let current=null;
+      try{ const r=await fetch(API,{cache:"no-store"}); if(r.ok){ const d=await r.json(); if(Array.isArray(d.staff)) current=d.staff; } }catch(e){}
+      const added=current?S.staff.filter(n=>!current.includes(n)):[];
+      const removed=current?current.filter(n=>!S.staff.includes(n)):[];
+      if(!current || added.length || removed.length){
+        if(!await askConfirm({title:"Save the record's staff list?", danger:true, confirmText:"Save anyway",
+          message:`The staff list on screen is the one from the saved record "${staffFromRecord}", not your current list. Saving now replaces staff.json with it.\n\nTo go back to your current staff list instead, click Cancel and then Reload.`,
+          details:current?[["Would add back",added.join(", ")],["Would remove",removed.join(", ")]]:[["Current staff.json","couldn't be checked"]]})){
+          setStatus("Staff list not saved. Click Reload to go back to your current staff list.");
+          return;
+        }
+      }
+    }
     try{
       const res=await fetch(API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({staff:S.staff})});
       if(!res.ok) throw new Error("server responded "+res.status);
-      staffUnsaved=false;
+      staffUnsaved=false; staffFromRecord=null;
       setStatus(`Saved ${S.staff.length} staff to staff.json.`);
     }catch(e){ setStatus("Could not save to the local server: "+e.message); }
   } else {
@@ -1351,6 +1372,7 @@ $("btnReload").addEventListener("click",async()=>{
 let RECORDS=[];
 const RECORDS_API="api/records";
 let recordsServerMode=false;
+let RECORDS_VERSION=null; // fingerprint of records.json as last loaded/saved; sent back so stale saves are refused
 
 function loadRecordsLocal(){
   try{
@@ -1369,6 +1391,7 @@ async function tryServerLoadRecords(){
     const data=await res.json();
     if(!Array.isArray(data.records)) throw new Error("records.json is not in the expected {\"records\":[...]} form");
     RECORDS=data.records;
+    RECORDS_VERSION=data.version||null;
     recordsServerMode=true;
   }catch(e){
     recordsServerMode=false;
@@ -1376,14 +1399,30 @@ async function tryServerLoadRecords(){
   }
   renderRecords();
 }
-async function persistRecords(){
-  if(recordsServerMode){
-    try{
-      const res=await fetch(RECORDS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({records:RECORDS})});
-      if(!res.ok) throw new Error("server responded "+res.status);
-    }catch(e){ setStatus("Could not save records to the local server: "+e.message); }
-  } else {
-    saveRecordsLocal();
+// Apply a change to the saved records (next = the full new list) and store it. Returns true only if it
+// was actually saved. If the server says the list changed since this page loaded it (another tab, or
+// someone else), nothing is written: the page switches to the server's current list and says so, and the
+// caller stops - so a stale page can never erase records saved elsewhere. On any other failure the
+// change is undone on screen too, so the list never shows something that isn't saved.
+async function commitRecords(next){
+  if(!recordsServerMode){ RECORDS=next; saveRecordsLocal(); renderRecords(); return true; }
+  try{
+    const res=await fetch(RECORDS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({records:next,baseVersion:RECORDS_VERSION})});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===409 && Array.isArray(data.records)){
+      RECORDS=data.records; RECORDS_VERSION=data.version||null; renderRecords();
+      setStatus("Saved records were changed elsewhere — the list has been refreshed and your change was not applied.");
+      await askConfirm({title:"Saved records were changed elsewhere", cancelText:null, confirmText:"OK",
+        message:"Another tab or another person changed the saved records after this page loaded them. To keep their changes safe, yours was not applied.\n\nThe list now shows the latest saved records — please do it again if it's still needed."});
+      return false;
+    }
+    if(!res.ok) throw new Error(data.error||("server responded "+res.status));
+    RECORDS=next; RECORDS_VERSION=data.version||null; renderRecords();
+    return true;
+  }catch(e){
+    renderRecords();
+    setStatus("Could not save records to the local server — nothing was changed: "+e.message);
+    return false;
   }
 }
 
@@ -1412,10 +1451,17 @@ function plotRecord(rec){
   // and merge (overwrite) that month's shifts into the live shifts object — other months
   // already plotted in S.shifts are left alone. Fields added after this record was saved
   // (e.g. compulsoryStarters) fall back to sensible defaults instead of wiping out live data.
+  const staffBefore=[...S.staff];
   S.staff=JSON.parse(JSON.stringify(d.staff));
   S.shiftTypes=JSON.parse(JSON.stringify(d.shiftTypes));
   S.keepApart=JSON.parse(JSON.stringify(d.keepApart));
-  S.leave=JSON.parse(JSON.stringify(d.leave));
+  // Leave: only the record's own month is restored - leave in every other month stays as it is now.
+  // (Previously the record's whole leave list replaced everything, wiping leave entered since.)
+  const inRecMonth=ds=>{ const [yy,mm]=String(ds).split("-").map(Number); return yy===rec.year && mm-1===rec.month; };
+  const mergedLeave={};
+  for(const n in S.leave){ const keep=(S.leave[n]||[]).filter(ds=>!inRecMonth(ds)); if(keep.length) mergedLeave[n]=keep; }
+  for(const n in (d.leave||{})){ const add=(d.leave[n]||[]).filter(inRecMonth); if(add.length) mergedLeave[n]=[...(mergedLeave[n]||[]),...add].sort(); }
+  S.leave=mergedLeave;
   S.expShifts=d.expShifts; S.restHrs=d.restHrs; S.rotation=d.rotation;
   S.requireAll=d.requireAll; S.weekendLeaveNoQuota=d.weekendLeaveNoQuota;
   if(d.compulsoryStarters) S.compulsoryStarters=JSON.parse(JSON.stringify(d.compulsoryStarters));
@@ -1423,7 +1469,12 @@ function plotRecord(rec){
   S.year=rec.year; S.month=rec.month;
   save();
   renderAll();
-  setStatus(`Plotted record "${rec.label}" onto ${MONTHS[rec.month]} ${rec.year}.`);
+  const notCurrent=S.staff.filter(n=>!staffBefore.includes(n));
+  const staffChanged=notCurrent.length || staffBefore.some(n=>!S.staff.includes(n));
+  if(S.serverMode && staffChanged) staffFromRecord=rec.label;
+  setStatus(`Plotted record "${rec.label}" onto ${MONTHS[rec.month]} ${rec.year}.`+
+    (notCurrent.length?` It includes ${notCurrent.length===1?"someone who isn't":"people who aren't"} on your current staff list: ${notCurrent.join(", ")}.`:"")+
+    (S.serverMode && staffChanged?" The staff list shown is the record's — click Reload to go back to your current list (Save would write the record's list to staff.json).":""));
 }
 function recordSummary(rec){
   const d=rec.data;
@@ -1468,10 +1519,9 @@ function renderRecords(){
         message:"This replaces the record's saved staff, shift types, keep-apart pairs, leave, shifts and settings with what's live now — the old snapshot can't be recovered.",
         details:[["Record",`${rec.label} (${MONTHS[rec.month]} ${rec.year})`],["Replaced with",`${MONTHS[S.month]} ${S.year} (live)`]]})) return;
       const fresh=snapshotNow(rec.label);
-      rec.label=fresh.label; rec.savedAt=fresh.savedAt; rec.year=fresh.year; rec.month=fresh.month; rec.data=fresh.data;
-      await persistRecords();
-      renderRecords();
-      setStatus(`Overwrote record "${rec.label}" (${recordSummary(rec)}).`);
+      const updated={...rec, label:fresh.label, savedAt:fresh.savedAt, year:fresh.year, month:fresh.month, data:fresh.data};
+      if(!await commitRecords(RECORDS.map(r=>r.id===rec.id?updated:r))) return;
+      setStatus(`Overwrote record "${updated.label}" (${recordSummary(updated)}).`);
     });
   });
   host.querySelectorAll('button[data-act="delete"]').forEach(btn=>{
@@ -1480,9 +1530,7 @@ function renderRecords(){
       if(!await askConfirm({title:"Delete saved record?", danger:true, confirmText:"Delete record",
         message:"This permanently removes the record from the saved records. It can't be undone.",
         details:[["Record",rec.label],["Month",`${MONTHS[rec.month]} ${rec.year}`]]})) return;
-      RECORDS=RECORDS.filter(r=>r.id!==rec.id);
-      await persistRecords();
-      renderRecords();
+      if(!await commitRecords(RECORDS.filter(r=>r.id!==rec.id))) return;
       setStatus(`Deleted record "${rec.label}".`);
     });
   });
@@ -1499,10 +1547,8 @@ function renderRecords(){
 }
 $("recordSave").addEventListener("click", async ()=>{
   const rec=snapshotNow($("recordLabel").value);
-  RECORDS.push(rec);
-  await persistRecords();
+  if(!await commitRecords([...RECORDS, rec])) return;
   $("recordLabel").value="";
-  renderRecords();
   setStatus(`Saved record "${rec.label}" (${recordSummary(rec)}).`);
 });
 $("recordsExport").addEventListener("click",()=>{
@@ -1517,9 +1563,7 @@ $("recordsFileImport").addEventListener("change", e=>{
     try{
       const data=JSON.parse(reader.result);
       if(!Array.isArray(data.records)) throw new Error("bad format");
-      RECORDS=data.records;
-      await persistRecords();
-      renderRecords();
+      if(!await commitRecords(data.records)) return;
       setStatus(`Imported ${RECORDS.length} record(s) from file.`);
     }catch(err){ setStatus("Could not read that file: "+err.message); }
   };

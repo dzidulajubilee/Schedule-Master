@@ -7,6 +7,13 @@ Schedule Master is a single-file HTML/JavaScript app for building and validating
 
 Either way, the app itself always talks to the same `ScheduleMaster.py` server — there's no truly offline, server-less mode anymore (see *Login & access* below).
 
+
+### Architecture at a glance
+
+![Schedule Master system architecture: browser page with the planning engine, nginx and the hardened Python service on the Linux VM, JSON data files and the mail relay](docs/images/1-architecture-stack.png)
+
+All diagrams in this README come from one editable draw.io file, [`docs/ScheduleMaster-architecture.drawio`](docs/ScheduleMaster-architecture.drawio) (open it at app.diagrams.net or in the draw.io desktop app; each page is a tab). The PNGs in [`docs/images/`](docs/images/) are exports of its pages — after editing a page, re-export it over the matching PNG.
+
 ---
 
 ## How to run (personal / local use)
@@ -156,6 +163,17 @@ Each selected day runs the same live checks Auto Plot's scoring penalizes for: l
 - **Soft keep-apart clashes** (sharing an ordinary weekday shift with a keep-apart partner) are batched into a single confirmation dialog covering all affected days, rather than one prompt per day.
 - "Select all" selects every day in the month that isn't a leave day for the chosen person; "Clear selection" deselects everything. The selection is also cleared automatically after applying, or when you switch person, month, or year.
 
+
+### The math behind it
+
+Every formula Auto Plot uses — quota, daily minimum and target, supply vs demand, rotation blocks and rest, the Phase 1 priority, the Phase 2/3 conditions and the full score with its weights — is on one page, typeset (draw.io page 5):
+
+![Auto Plot formulas: quota, daily demand, supply vs demand, rotation and carry-over, rest hours, Phases 1 to 3, the score and its weights](docs/images/5-the-math-formulas.png)
+
+Page 6 works through a real run (September 2026, 8 staff, default settings) whose score of 3,560 is accounted for term by term — 3,000 points are unavoidable for that team size, 560 come from Day/Night splits — and shows how the best score improves with the number of attempts per rotation pattern:
+
+![Worked example: score breakdown, per-person totals, why 10 shifts fall below target, why 560, and the search chart](docs/images/6-worked-example-and-search.png)
+
 ---
 
 ## 5. Flow diagram
@@ -238,6 +256,23 @@ flowchart TD
     M --> N[Report pattern, score,<br/>starters used, leave skips,<br/>and any remaining gaps]
 ```
 
+
+### Detailed diagrams (draw.io)
+
+The Mermaid charts above give the overview; the draw.io pages go one level deeper.
+
+**Auto Plot logic** — the search loop, what one candidate plan goes through (inputs, carry-over, Phases 0–3, eligibility and keep-apart rules) and the scoring table:
+
+![Auto Plot logic: search loop, buildOnePlan phases and scorePlan penalty table](docs/images/2-auto-plot-logic.png)
+
+**Rules and checks** — the decision chain Manual Plot runs before placing each shift, the leave rules, the live checks, and the settings that drive them:
+
+![Manual Plot decision chain, leave rules, live checks, compulsory-starter checks and settings](docs/images/3-rules-and-checks.png)
+
+**Email and record flows** — sending shifts (including people switched Off and invalid addresses) and how a save from an out-of-date page is refused instead of overwriting newer records:
+
+![Email sending flow and saved-records version check](docs/images/4-email-and-record-flows.png)
+
 ---
 
 ## 6. Persistence & data flow
@@ -266,6 +301,9 @@ The **Saved records** panel lets you keep a permanent, labeled history of past r
 
 - **Save**: typing a label (optional — it defaults to "Month Year") and clicking "Save current month as a record" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list.
 - **View**: each record shows a one-line summary (staff/shift-type/placed-shift counts) plus a "View" button that expands the complete saved snapshot as raw JSON, so you can always refer back to exactly what was saved.
+- **Load (Plot)**: puts a record back on the calendar exactly as it was saved — its staff list, shift types, keep-apart pairs, settings, and that month's shifts and leave — so you can look at an old roster at any time. Leave in every *other* month is left as it is now. The record itself is never changed by loading it.
+- **Staff who have since left**: removing someone from the staff list never touches saved records, so loading an old record still shows that person's shifts and leave for that month, and lists them for that view; the status line names anyone who isn't on your current staff list. While a record's staff list is on screen, **Reload** takes you back to your current list, and **Save** asks first — naming who would be added back to or removed from `staff.json` — before writing the record's list there.
+- **Two tabs or two people at once**: records are saved as a whole list, so each save carries a fingerprint of the list it started from. If the saved records changed in the meantime (another tab, or someone else), the server refuses the save instead of overwriting, the page switches to the latest list and says your change wasn't applied, and you simply do it again. Older cached copies of the page still save as before.
 - **Delete**: each record has its own "Delete" button (with a confirmation prompt); deleting one only removes that record.
 - **Storage**: records live in their own file, `records.json`, kept apart from `staff.json`, read from and written to it directly (`GET`/`PUT api/records`) since signing in requires the server to be reachable in the first place (see §6). If the server can't be reached after signing in, they fall back to `localStorage` under `schedulemaster_records` (auto-migrated once from the old key `planthat_records` if found), with "Export records.json" / "Import records.json" buttons to move them to/from a file by hand, mirroring how staff are exported/imported.
 
