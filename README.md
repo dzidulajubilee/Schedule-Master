@@ -12,6 +12,8 @@ Either way, the app itself always talks to the same `ScheduleMaster.py` server �
 
 ![Schedule Master system architecture: browser page with the planning engine, nginx and the hardened Python service on the Linux VM, JSON data files and the mail relay](docs/images/1-architecture-stack.png)
 
+All diagrams in this README come from one editable draw.io file, [`docs/ScheduleMaster-architecture.drawio`](docs/ScheduleMaster-architecture.drawio) (open it at app.diagrams.net or in the draw.io desktop app; each page is a tab). The PNGs in [`docs/images/`](docs/images/) are exports of its pages — after editing a page, re-export it over the matching PNG.
+
 ---
 
 ## How to run (personal / local use)
@@ -348,7 +350,8 @@ For a team to share one always-on instance instead of everyone running it on the
 
 ```
 sudo bash install.sh                          # install/upgrade, https on this VM's own address(es)
-sudo bash install.sh sched.lan 10.0.0.5        # also answer to these extra names/IPs (added to the cert)
+sudo bash install.sh sched.lan 10.0.0.5        # also answer to these extra names/IPs (kept in the cert from then on)
+sudo bash install.sh --new-ca sched2.lan       # add a name later (makes a new private CA - see below)
 sudo bash install.sh --allow any               # let addresses outside your private network reach it too
 sudo bash install.sh --allow 41.66.0.0/16      # or just allow one specific extra range
 sudo bash install.sh --uninstall               # remove the service and nginx site (your data stays put)
@@ -358,11 +361,35 @@ What it sets up:
 
 - The app in `/opt/schedulemaster`, run by systemd as its own unprivileged user — starts at boot, restarts if it ever stops.
 - **nginx** in front of it on ports 80/443 (80 redirects to https); the app itself only listens on `127.0.0.1:8766` and is never reachable directly.
-- A **self-signed https certificate** for the VM's own address(es) — browsers show a one-time trust warning, which you can make permanent by installing the certificate (`/etc/ssl/schedulemaster/schedulemaster.crt`) as trusted, or clear for good with a real certificate of your own.
+- **https from a private certificate authority (CA)** made on the VM at install time, plus a server certificate it signs for the VM's current address(es) — see *https and IP address changes* below. Until a PC trusts the CA its browser shows a trust warning; import `/etc/ssl/schedulemaster/ca.crt` once to make it go away for good.
+- An **address refresher** (`schedulemaster-address.timer`, at boot and every minute) — when the VM's IP changes it issues a new certificate for the new address and reloads nginx, so you **don't need to re-run `install.sh`** after an IP change. nginx itself answers on whatever address the VM has (`server_name ~.;`).
 - By default nginx only accepts connections from private/loopback addresses (RFC1918 + localhost); `--allow` widens that, and the choice is remembered on future re-runs.
 - Extra brute-force protection at the nginx layer on `/api/login` (rate-limited), on top of the app's own 5-attempt lockout (see *Login & access*).
 
 Re-running the installer to upgrade is safe — `staff.json`/`records.json`/`emails.json`/`login.json` are never overwritten — but it **does** replace `ScheduleMaster.py` with the new version, which would undo any hand-edited `SMTP_*` mail-relay settings; keep a copy of those if you customize them, and re-apply them (then `sudo systemctl restart schedulemaster`) after upgrading.
+
+### https and IP address changes
+
+Changing the VM's IP (a move, a new DHCP lease, a cloned VM) needs no re-install:
+
+- **nginx** isn't tied to an address — it answers on any name/IP the VM is reached by. The private-address allow list still applies.
+- **The certificate** is re-issued within a minute of the change by `/usr/local/sbin/schedulemaster-refresh-address` (run by `schedulemaster-address.timer`). It's signed by the same private CA, so a PC that trusts `ca.crt` keeps trusting it — no warning, nothing to re-import. The refresher also renews the certificate 30 days before it expires (they last 825 days), and does nothing at all when nothing changed. What it did is in `journalctl -u schedulemaster-address`.
+
+**Trusting the CA on a PC** (once): copy `/etc/ssl/schedulemaster/ca.crt` to the PC and import it as a trusted root —
+Windows: double-click › *Install Certificate* › *Local Machine* › *Place all certificates in the following store* › **Trusted Root Certification Authorities**;
+macOS: open it in Keychain Access (System keychain) › *Trust* › **Always Trust**;
+Firefox (own store): *Settings › Privacy & Security › View Certificates › Authorities › Import* (trust for websites).
+
+**Why a CA is safe to trust here:** the CA carries *name constraints* — it can only ever vouch for private addresses (10.x, 172.16–31.x, 192.168.x, 127.x), `localhost`, and the names listed in `/etc/ssl/schedulemaster/ca-names.txt` (the names given to `install.sh`, the VM's hostname, and any public IP it had at install). Browsers reject anything else it signs, so even someone who copied `ca.key` couldn't use it to impersonate another website to your PCs. `ca.key` is readable by root only.
+
+**Upgrading from an older install** (which used a self-signed `schedulemaster.crt`): the first run of the new `install.sh` creates the CA, keeps the names and public IPs the old certificate covered, and switches https over. PCs that had trusted the old `schedulemaster.crt` see a warning **once** — remove the old certificate from them and import `ca.crt` instead; after that, IP changes are invisible to them.
+
+Things to know:
+
+- **New private IPs are covered automatically; new public IPs are not.** A public (non-RFC1918) address the VM gets later is logged as "not covered" and served with the private-address certificate (browsers warn). Public IPs the VM had at install, or that you name on the `install.sh` command line when the CA is made, are covered.
+- **Adding a name later** (e.g. a DNS name you create after installing) needs `sudo bash install.sh --new-ca the.new.name`. That makes a new CA (keeping every name the old one covered, plus the new one; the old CA is kept as `ca.*.replaced-<date>`), so each PC imports the new `ca.crt` once. A plain re-run with a name the current CA can't cover only warns and changes nothing. Private IPs can always be added without a new CA.
+- The CA itself is valid for 10 years; `--new-ca` also renews it.
+- Leaving `/etc/ssl/schedulemaster` alone across re-runs and upgrades is what keeps PCs trusting the VM — back it up along with `/opt/schedulemaster` if you rebuild the VM.
 
 Useful commands once installed:
 
@@ -370,4 +397,6 @@ Useful commands once installed:
 systemctl status schedulemaster        # is it running (it starts by itself at boot)
 journalctl -u schedulemaster -f        # live log (logins, emails sent)
 systemctl restart schedulemaster       # restart after replacing ScheduleMaster.py/.html by hand
+journalctl -u schedulemaster-address   # IP changes seen / certificates re-issued
+sudo /usr/local/sbin/schedulemaster-refresh-address   # re-check the address right now instead of waiting up to a minute
 ```
