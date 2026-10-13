@@ -439,7 +439,7 @@ table.workload td.ok{color:var(--ok);}
     <div class="row" style="margin-top:12px;">
       <button id="emailSend" class="primary" style="font-size:15px;padding:10px 22px;">Send this month's shifts to everyone</button>
     </div>
-    <div class="hint">Emails each person their own dates and shift times for <span id="emailMonthLabel">—</span> — nobody sees anyone else's schedule. Each email includes a PDF and a calendar (.ics) file, colored to match whichever palette swatch is selected above right now. Sent through the mail relay configured at the top of <code>ScheduleMaster.py</code> (defaults to a local Postfix on the same machine, no login required).</div>
+    <div class="hint">Emails each person their own dates and shift times for <span id="emailMonthLabel">—</span> — nobody sees anyone else's schedule. Each email includes a PDF and a calendar (.ics) file, colored to match whichever palette swatch is selected above right now. Sent through the mail relay set in <code>mail.json</code> on the server (without it: a local Postfix on the same machine, no login required).</div>
     <div id="emailSendResult" class="hint"></div>
   </div>
 </div>
@@ -2115,7 +2115,7 @@ $("emailSend").addEventListener("click", async ()=>{
   const monthLabel=`${MONTHS[S.month]} ${S.year}`;
   const paletteName=(PALETTES.find(p=>p.id===(S.palette||"classic"))||{}).name||"Classic";
   if(!await askConfirm({title:`Send ${monthLabel} shifts?`, confirmText:`Send ${names.length} email${names.length===1?"":"s"}`,
-    message:`Each person gets one email with only their own dates, plus a PDF and a calendar (.ics) file colored in the "${paletteName}" scheme that's active right now. Emails go out through the mail relay configured in ScheduleMaster.py.`,
+    message:`Each person gets one email with only their own dates, plus a PDF and a calendar (.ics) file colored in the "${paletteName}" scheme that's active right now. Emails go out through the mail relay set in mail.json on the server.`,
     details:[["Sending to",`${names.length} ${names.length===1?"person":"people"}`],["Turned off — will NOT be emailed",offNames.join(", ")]]})) return;
   const monthShifts={};
   for(const d in S.shifts){

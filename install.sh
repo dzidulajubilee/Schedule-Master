@@ -101,11 +101,59 @@ PYTHON="$(command -v python3)"
 say "Installing the app into $APP_DIR"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 mkdir -p "$APP_DIR"
+# Mail relay settings used to live only in ScheduleMaster.py itself, so replacing it lost hand edits.
+# They now belong in mail.json (never overwritten). One-time rescue: if there is no mail.json yet, copy any
+# SMTP_* values in the installed ScheduleMaster.py that differ from the new version's defaults into it.
+# The old file is only parsed (python ast), never run.
+MAIL_JSON="$APP_DIR/mail.json"
+if [ "$SRC_DIR" != "$APP_DIR" ] && [ -f "$APP_DIR/ScheduleMaster.py" ] && [ ! -e "$MAIL_JSON" ]; then
+  rc=0
+  "$PYTHON" -I - "$APP_DIR/ScheduleMaster.py" "$SRC_DIR/ScheduleMaster.py" "$MAIL_JSON.new" <<'PYEOF' || rc=$?
+import ast, json, sys
+KEYS = {"SMTP_HOST": "host", "SMTP_PORT": "port", "SMTP_FROM_NAME": "from_name", "SMTP_FROM_ADDR": "from_addr",
+        "SMTP_USERNAME": "username", "SMTP_PASSWORD": "password", "SMTP_USE_TLS": "use_tls"}
+def smtp_values(path):
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    vals, odd = {}, []
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in KEYS):
+            try:
+                vals[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                odd.append(node.targets[0].id)
+    return vals, odd
+try:
+    old, odd = smtp_values(sys.argv[1])
+except Exception as e:
+    print(f"could not read the installed ScheduleMaster.py ({e})"); sys.exit(2)
+new, _ = smtp_values(sys.argv[2])
+keep = {KEYS[k]: v for k, v in old.items() if k in new and v != new[k]}
+for k in odd:
+    print(f"{k} is not a plain value in the installed ScheduleMaster.py - copy it into mail.json by hand")
+if keep:
+    with open(sys.argv[3], "w", encoding="utf-8") as f:
+        json.dump(keep, f, indent=2)
+        f.write("\n")
+    shown = ", ".join(f"{k}=" + ("(set, not shown)" if k == "password" else json.dumps(v)) for k, v in keep.items())
+    print(f"kept your mail relay settings in mail.json: {shown}")
+sys.exit(2 if odd else 0)
+PYEOF
+  if [ -f "$MAIL_JSON.new" ]; then
+    mv "$MAIL_JSON.new" "$MAIL_JSON"; chown "$APP_USER":"$APP_USER" "$MAIL_JSON"; chmod 600 "$MAIL_JSON"
+  fi
+  if [ "$rc" -ne 0 ]; then                              # keep the old file so nothing is lost
+    cp -p "$APP_DIR/ScheduleMaster.py" "$APP_DIR/ScheduleMaster.py.before-upgrade"
+    warn "Not every mail setting could be carried over automatically (see above). The previous version is kept as"
+    warn "$APP_DIR/ScheduleMaster.py.before-upgrade - copy what you need into $MAIL_JSON."
+  fi
+fi
 if [ "$SRC_DIR" != "$APP_DIR" ]; then
   for f in ScheduleMaster.py ScheduleMaster.html README.md; do
     [ -f "$SRC_DIR/$f" ] && cp -f "$SRC_DIR/$f" "$APP_DIR/$f"
   done
-  for f in staff.json records.json emails.json login.json; do      # your data: only copied if not there yet
+  for f in staff.json records.json emails.json login.json mail.json; do   # your data/settings: only copied if not there yet
     if [ -f "$SRC_DIR/$f" ] && [ ! -e "$APP_DIR/$f" ]; then cp "$SRC_DIR/$f" "$APP_DIR/$f"; fi
   done
 fi
@@ -113,6 +161,8 @@ chown -R "$APP_USER":"$APP_USER" "$APP_DIR"
 chmod 750 "$APP_DIR"
 chmod 640 "$APP_DIR"/*.py "$APP_DIR"/*.html 2>/dev/null || true
 [ -f "$APP_DIR/login.json" ] && chmod 600 "$APP_DIR/login.json"
+[ -f "$APP_DIR/mail.json" ] && chmod 600 "$APP_DIR/mail.json"              # may hold the relay password
+[ -f "$APP_DIR/ScheduleMaster.py.before-upgrade" ] && chmod 600 "$APP_DIR/ScheduleMaster.py.before-upgrade"
 
 # ---------------------------------------------------------------- systemd service (starts at boot)
 say "Creating the systemd service (starts at boot, restarts if it stops)"
@@ -539,12 +589,11 @@ Sign in with admin / admin, then change it - create/edit login.json in $APP_DIR:
     { "username": "admin", "password": "your new password" }
 (takes effect immediately, no restart needed - it's read fresh on every sign-in attempt)
 
-Mail relay settings live inside ScheduleMaster.py itself (the SMTP_* constants near the top),
-not a separate file:
-    sudo -u $APP_USER nano $APP_DIR/ScheduleMaster.py      (edit the SMTP_HOST / SMTP_PORT / etc. lines)
-    sudo systemctl restart $SERVICE                        (needed - these are only read at startup)
-Note: re-running this installer to upgrade replaces ScheduleMaster.py with the new version, which
-would undo hand edits to those SMTP_* lines - keep a copy of your settings if you customize them.
+Mail relay settings go in $APP_DIR/mail.json - kept across upgrades, read on every send (no restart):
+    sudo -u $APP_USER nano $APP_DIR/mail.json
+    { "host": "10.0.0.25", "port": 25, "from_addr": "rota@yourdomain.com" }
+Also available: "from_name", "username", "password", "use_tls": true/false - leave out what you don't
+need. Without mail.json the defaults at the top of ScheduleMaster.py apply (a local Postfix on port 25).
 
 Useful commands
     systemctl status $SERVICE              is it running (it starts by itself at boot)

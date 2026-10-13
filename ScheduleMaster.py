@@ -21,7 +21,7 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
                         "shifts":{"YYYY-MM-DD":{"Full Name":"shiftTypeId", ...}, ...},
                         "leave":{"Full Name":["YYYY-MM-DD", ...], ...}, "palette":"classic"}. Sends one individual
                         email per saved address (nobody sees anyone else's schedule) through the
-                        SMTP relay configured below - plain text + HTML body, plus two attachments named
+                        SMTP relay configured in mail.json / below - plain text + HTML body, plus two attachments named
                         Shifts_YYYY-MM_<Full Name>.pdf (one-page month calendar, colored per "palette",
                         see SCREEN_PALETTES) and .ics (importable calendar) - and returns {"sent":[names],
                         "skipped":[{"name":...,"reason":...}], "failed":[{"name":...,"error":...}]}.
@@ -71,6 +71,7 @@ STAFF_FILE = os.path.join(FOLDER, "staff.json")
 RECORDS_FILE = os.path.join(FOLDER, "records.json")
 EMAILS_FILE = os.path.join(FOLDER, "emails.json")
 LOGIN_FILE = os.path.join(FOLDER, "login.json")
+MAIL_FILE = os.path.join(FOLDER, "mail.json")
 HTML_FILE = "ScheduleMaster.html"
 PORT = 8743
 
@@ -85,15 +86,21 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_SECONDS = 15 * 60
 
 # ---------- mail relay settings ----------
+# These are the DEFAULTS. Put your own settings in mail.json next to this file instead of editing
+# them here: install.sh never overwrites mail.json, so they survive upgrades, and it is read fresh
+# on every send (no restart needed). Any key you leave out keeps the default below. Example:
+#   {"host": "10.0.0.25", "port": 587, "from_name": "Schedule Master", "from_addr": "rota@example.com",
+#    "username": "rota", "password": "secret", "use_tls": true}
+# Keys starting with "_" are ignored (use them for notes). See read_mail_settings().
 # Defaults assume a Postfix instance on this same machine, listening on 25, accepting mail from
-# localhost with no login (the common setup for an internal relay). Point SMTP_HOST at your VM's
-# address if Postfix runs elsewhere on the network instead.
+# localhost with no login (the common setup for an internal relay). Set "host" to your relay's
+# address if it runs elsewhere on the network instead.
 SMTP_HOST = "127.0.0.1"
 SMTP_PORT = 25
 SMTP_FROM_NAME = "Schedule Master"
 SMTP_FROM_ADDR = "scheduler@localhost"
-# If your relay requires STARTTLS and/or a login, fill these in and see send_email() below —
-# the auth/TLS lines are already there, just commented out.
+# If your relay requires STARTTLS and/or a login, set "use_tls" and "username" + "password" -
+# open_smtp() below uses them.
 SMTP_USERNAME = None
 SMTP_PASSWORD = None
 SMTP_USE_TLS = False
@@ -264,6 +271,49 @@ def write_emails(data):
         json.dump(out, f, indent=2)
     os.replace(tmp, EMAILS_FILE)
     return {"emails": cleaned, "paused": paused}
+
+
+def read_mail_settings():
+    """Mail relay settings: the SMTP_* defaults above, overridden by whatever mail.json sets.
+    Raises ValueError (with a readable reason) if mail.json exists but can't be used - the caller then
+    sends nothing rather than quietly falling back to a different relay."""
+    cfg = {"host": SMTP_HOST, "port": SMTP_PORT, "from_name": SMTP_FROM_NAME, "from_addr": SMTP_FROM_ADDR,
+           "username": SMTP_USERNAME, "password": SMTP_PASSWORD, "use_tls": SMTP_USE_TLS}
+    if not os.path.exists(MAIL_FILE):
+        return cfg
+    with open(MAIL_FILE, "r", encoding="utf-8") as f:
+        raw = f.read().strip()
+    if not raw:
+        return cfg
+    data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it
+    if not isinstance(data, dict):
+        raise ValueError('mail.json must look like {"host": "10.0.0.25", "port": 25, "from_addr": "rota@example.com"}')
+    unknown = sorted(k for k in data if k not in cfg and not str(k).startswith("_"))
+    if unknown:  # most likely a typo (e.g. "pasword") - better to say so than to ignore it
+        raise ValueError(f"unknown setting(s) {', '.join(unknown)} - known: {', '.join(cfg)}")
+    for key, val in data.items():
+        if key.startswith("_"):
+            continue
+        if key == "port":
+            if isinstance(val, str) and val.strip().isdigit():
+                val = int(val.strip())
+            if isinstance(val, bool) or not isinstance(val, int) or not 1 <= val <= 65535:
+                raise ValueError('"port" must be a number from 1 to 65535')
+        elif key == "use_tls":
+            if not isinstance(val, bool):
+                raise ValueError('"use_tls" must be true or false (no quotes)')
+        elif key in ("username", "password"):
+            if val is not None and not isinstance(val, str):
+                raise ValueError(f'"{key}" must be text in quotes, or null')
+            val = val or None  # "" means none
+        else:  # host, from_name, from_addr
+            if not isinstance(val, str) or (key != "from_name" and not val.strip()):
+                raise ValueError(f'"{key}" must be text in quotes')
+            if any(c in val for c in "\r\n"):
+                raise ValueError(f'"{key}" must be on one line')
+            val = val.strip()
+        cfg[key] = val
+    return cfg
 
 
 def read_login():
@@ -737,23 +787,26 @@ def attachment_basename(name, year, month):
     return f"Shifts_{year}-{month:02d}_{safe}"
 
 
-def open_smtp():
-    """One SMTP connection, reused for every recipient in a batch rather than reconnecting each time."""
-    server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+def open_smtp(cfg=None):
+    """One SMTP connection, reused for every recipient in a batch rather than reconnecting each time.
+    cfg: settings from read_mail_settings() (read here if not given)."""
+    cfg = cfg or read_mail_settings()
+    server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
     server.ehlo()
-    if SMTP_USE_TLS:
+    if cfg["use_tls"]:
         server.starttls(context=ssl.create_default_context())
         server.ehlo()
-    if SMTP_USERNAME and SMTP_PASSWORD:
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+    if cfg["username"] and cfg["password"]:
+        server.login(cfg["username"], cfg["password"])
     return server
 
 
-def send_via(server, to_addr, subject, text_body, html_body, attachments=None):
-    """attachments: optional list of (filename, maintype, subtype, bytes)."""
+def send_via(server, to_addr, subject, text_body, html_body, attachments=None, cfg=None):
+    """attachments: optional list of (filename, maintype, subtype, bytes). cfg: as for open_smtp()."""
+    cfg = cfg or read_mail_settings()
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_ADDR))
+    msg["From"] = formataddr((cfg["from_name"], cfg["from_addr"]))
     msg["To"] = to_addr
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid()
@@ -761,7 +814,7 @@ def send_via(server, to_addr, subject, text_body, html_body, attachments=None):
     msg.add_alternative(html_body, subtype="html")
     for filename, maintype, subtype, data in (attachments or []):
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
-    server.send_message(msg, from_addr=SMTP_FROM_ADDR, to_addrs=[to_addr])
+    server.send_message(msg, from_addr=cfg["from_addr"], to_addrs=[to_addr])
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1016,11 +1069,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     skipped.append({"name": name, "reason": "invalid email address"})
 
             server = None
+            mail_cfg = None
             if to_send:
                 try:
-                    server = open_smtp()
+                    mail_cfg = read_mail_settings()  # read once per batch, fresh each send - no restart needed
+                except (ValueError, OSError) as e:
+                    self._send_json(400, {"error": f"mail.json is unreadable: {e}. Nothing was sent."})
+                    return
+                try:
+                    server = open_smtp(mail_cfg)
                 except Exception as e:
-                    self._send_json(502, {"error": f"could not connect to the mail relay: {e}"})
+                    self._send_json(502, {"error": f"could not connect to the mail relay "
+                                                   f"({mail_cfg['host']}:{mail_cfg['port']}): {e}"})
                     return
             for name, addr in to_send:
                 try:
@@ -1034,10 +1094,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                          build_shift_ics(name, year, month, month_label, shift_types, shifts, leave)),
                     ]
                     try:
-                        send_via(server, addr, subject, text_body, html_body, attachments)
+                        send_via(server, addr, subject, text_body, html_body, attachments, mail_cfg)
                     except (smtplib.SMTPServerDisconnected, smtplib.SMTPSenderRefused, OSError):
-                        server = open_smtp()  # relay dropped the connection mid-batch - reconnect once and retry
-                        send_via(server, addr, subject, text_body, html_body, attachments)
+                        server = open_smtp(mail_cfg)  # relay dropped the connection mid-batch - reconnect once and retry
+                        send_via(server, addr, subject, text_body, html_body, attachments, mail_cfg)
                     sent.append(name)
                 except Exception as e:
                     failed.append({"name": name, "error": str(e)})
@@ -1078,6 +1138,12 @@ def main():
     print("Press Ctrl+C to stop.")
     if not os.path.exists(LOGIN_FILE):
         print("No login.json found - signing in with the default admin / admin for now.")
+    try:
+        _mc = read_mail_settings()
+        print(f"Mail relay: {_mc['host']}:{_mc['port']} "
+              f"({'from mail.json' if os.path.exists(MAIL_FILE) else 'defaults - no mail.json'})")
+    except (ValueError, OSError) as e:
+        print(f"WARNING: mail.json is unreadable ({e}) - sending email will fail until it is fixed.")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

@@ -332,7 +332,7 @@ The **Email** panel (§8 on screen) lets you save one address per person and, wi
 
 - **Saved addresses** live in `emails.json` on the server (`GET`/`PUT api/emails`), separate from `staff.json` and `records.json`. Saving and sending both require `ScheduleMaster.py` to be running — the panel disables the Send button (with an explanatory tooltip) if it can't reach the server.
 - **On/Off per person** — each saved address has an **On/Off** button. Turning someone **Off** keeps their address but leaves them out when you send to everyone; the list shows how many will be emailed, the confirmation names who is turned off, and the result lists them as skipped ("sending turned off"). The setting is saved in `emails.json` as an optional `"paused": [names]` list (the key only appears while someone is turned off), so it's shared by everyone who signs in, and the server enforces it when sending. Deleting a person's address also clears their Off setting.
-- **Send this month's shifts to everyone** asks for confirmation (naming how many emails will go out and which color scheme they'll be colored with), then sends one individual email per saved address through the SMTP relay configured in `ScheduleMaster.py` (`SMTP_HOST`/`SMTP_PORT`/etc. near the top of the file — defaults to a local Postfix relay on the same machine, no login required).
+- **Send this month's shifts to everyone** asks for confirmation (naming how many emails will go out and which color scheme they'll be colored with), then sends one individual email per saved address through the SMTP relay set in `mail.json` (see *Mail relay settings* below — without it, a local Postfix relay on the same machine, no login required).
 - **Each email contains three things:**
   1. The message itself: a month calendar grid plus a dated list of that person's shifts, colored with the active scheme's on-screen colors (see *Color schemes*), with a plain-text version for mail apps that don't show formatted email.
   2. A one-page **PDF month calendar** for that person — a Sun–Sat grid (the same layout as the on-screen/printed calendar, not a plain list), with a shift-count summary and legend, colored using whichever calendar scheme was active in the browser when you clicked Send — see *Color schemes* above for exactly how a scheme's colors carry over.
@@ -341,6 +341,21 @@ The **Email** panel (§8 on screen) lets you save one address per person and, wi
 - **Both attachments are named after the recipient**, not a generic filename — `Shifts_YYYY-MM_Full Name.pdf` / `.ics` (e.g. `Shifts_2026-09_Dzidula Gati.pdf`).
 - **After sending**, the panel reports how many emails were sent, and lists anyone **skipped** (no valid-looking email address on file) or **failed** (the relay rejected or couldn't be reached), each with a reason.
 - The PDF is generated with a small dependency-free writer built into `ScheduleMaster.py` itself — no `reportlab` or other third-party package required, consistent with the rest of the app.
+
+### Mail relay settings (`mail.json`)
+
+Put the relay settings in `mail.json` next to `ScheduleMaster.py` (on an installed VM: `/opt/schedulemaster/mail.json`):
+
+```json
+{ "host": "10.0.0.25", "port": 587, "from_name": "Schedule Master", "from_addr": "rota@example.com",
+  "username": "rota", "password": "secret", "use_tls": true }
+```
+
+- Every key is optional — anything left out keeps the default from the `SMTP_*` lines at the top of `ScheduleMaster.py` (`127.0.0.1:25`, from `scheduler@localhost`, no login, no TLS). No `mail.json` at all means exactly those defaults. `use_tls` turns on STARTTLS; `username` + `password` turn on login. Keys starting with `_` are ignored, so you can leave notes.
+- It's read fresh on every send — **no restart needed** after editing it.
+- `install.sh` **never overwrites it** (like `staff.json`/`records.json`/`emails.json`/`login.json`) and keeps it readable by the app's own user only, since it can hold the relay password. Like the other data files, it's never served over the web.
+- If it can't be used (broken JSON, a misspelled key such as `"pasword"`, a port that isn't a number), **nothing is sent** and the Email panel shows why — it never quietly falls back to a different relay. The server also prints the relay it will use (and any problem with `mail.json`) when it starts.
+- Editing the `SMTP_*` lines in `ScheduleMaster.py` still works, but an upgrade replaces that file, so `mail.json` is the place for your settings.
 
 ---
 
@@ -366,7 +381,7 @@ What it sets up:
 - By default nginx only accepts connections from private/loopback addresses (RFC1918 + localhost); `--allow` widens that, and the choice is remembered on future re-runs.
 - Extra brute-force protection at the nginx layer on `/api/login` (rate-limited), on top of the app's own 5-attempt lockout (see *Login & access*).
 
-Re-running the installer to upgrade is safe — `staff.json`/`records.json`/`emails.json`/`login.json` are never overwritten — but it **does** replace `ScheduleMaster.py` with the new version, which would undo any hand-edited `SMTP_*` mail-relay settings; keep a copy of those if you customize them, and re-apply them (then `sudo systemctl restart schedulemaster`) after upgrading.
+Re-running the installer to upgrade is safe — `staff.json`/`records.json`/`emails.json`/`login.json`/`mail.json` are never overwritten. It does replace `ScheduleMaster.py` with the new version, so mail settings belong in `mail.json` (see *Mail relay settings*), not in the `SMTP_*` lines of the code. **Upgrading an install whose `SMTP_*` lines were edited by hand:** if there's no `mail.json` yet, the installer reads those lines from the installed copy (without running it) before replacing it, writes the values that differ from the defaults into `mail.json`, and prints which settings it kept (never the password). If a value can't be read that way, it keeps the old file as `ScheduleMaster.py.before-upgrade` and tells you to copy the setting across by hand.
 
 ### https and IP address changes
 
