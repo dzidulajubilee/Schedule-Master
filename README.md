@@ -47,7 +47,8 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
   ```json
   { "username": "admin", "password": "your new password" }
   ```
-  This is read fresh on every sign-in attempt — no restart needed after changing it.
+  No restart needed: the next sign-in (or the next start of the server) picks it up and **replaces the plain password with a salted hash** (`"password_hash"`, PBKDF2-SHA256), so the password never stays on disk as plain text. Everyone is signed out when that happens. To change the password again, add a `"password"` line the same way. If the file can't be written (permissions), the server says so in its log and keeps checking the plain password.
+- The same **admin password** opens the **Mail server** page (see §10).
 - **Sessions** last 30 days (a cookie in the browser), so you're not asked again on every visit.
 - **Lockout**: 5 wrong attempts in a row from the same address locks it out for 15 minutes.
 - Signing out (the **Log out** button) clears the session immediately.
@@ -62,12 +63,19 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
 - Can **Auto Plot** an entire month automatically, respecting all the coverage and rest rules below — optionally forced to open the month with up to 4 named **compulsory starters** (see §9).
 - Supports **Manual Plot** for one person across one or more days at a time, picked from a small click-to-select calendar, with the same rules enforced live.
 - Shows a live **calendar**, a **workload & validation** table, and a **coverage check** panel.
-- **Prints** a clean roster (and optionally the coverage check) to PDF/paper.
+- **Prints** a clean roster (and optionally the coverage check) to PDF/paper, laid out like a rota ledger (see §7).
 - Lets you **save a labeled snapshot** of the current month — staff, shift types, keep-apart pairs, leave, that month's shifts, and settings — as a standalone record you can look back on or delete later, kept separate from the live data (see §8).
-- Lets you pick one of **10 calendar color schemes** (a row of swatches next to the calendar) — purely cosmetic, but it's what colors the on-screen calendar, the printed page, *and* the emailed PDF (see *Color schemes* and §10).
+- Lets you pick one of **10 calendar color schemes** (on the *Shifts & rules* page) — purely cosmetic, but it's what colors the on-screen calendar, the printed page, *and* the email and its PDF (see *Color schemes* and §10).
 - Can **email each person their own shifts** for the month — nobody sees anyone else's — with a PDF and an importable calendar (`.ics`) file attached (see §10).
+- Has a **Mail server** page, behind the admin password, for the relay settings and a test email (see §10).
 - Sits behind a **sign-in screen** (see *Login & access*) once `ScheduleMaster.py` is running.
-- Persists staff, records, saved email addresses, and login credentials to `staff.json` / `records.json` / `emails.json` / `login.json` on the server; the current month's shifts, leave, and settings live only in the browser's `localStorage` (see §6).
+- Persists staff, records, saved email addresses, mail settings and login credentials to `staff.json` / `records.json` / `emails.json` / `mail.json` / `login.json` on the server; the current month's shifts, leave, and settings live only in the browser's `localStorage` (see §6).
+
+### Finding your way around
+
+- **Top bar**: the month (‹ › arrows, or pick a month and year), **Auto Plot**, a **More** menu (Print / PDF, the two printout options, Clear this month, Reset all data in this browser), a light/dark switch, **Mail server** and **Log out**.
+- **Tabs**: **Roster** (the calendar, a side panel with **Plot**, **Leave** and **Starters** tabs, and the Workload table with the coverage check), **Staff** (the list, Save / Reload, Export / Import `staff.json`), **Shifts & rules** (shift types, expected shifts, rest, rotation, keep-apart pairs, calendar colours), **Records** and **Email**. The page you're on is kept in the address (`#staff`, …) and comes back after a reload.
+- **Light / dark**: follows the device until you use the switch; the choice is saved in this browser. Dark mode is screen-only.
 
 ---
 
@@ -96,12 +104,12 @@ Everything lives in a single in-memory state object, `S`, saved to `localStorage
 
 ## Color schemes
 
-A row of swatch buttons next to the calendar switches between 10 color schemes: **Classic** (the default), **Ocean**, **Sunset**, **Forest**, **Berry**, **Slate**, **Deep**, **Deep Bold**, **Deep Emerald**, and **Deep Crimson**. The choice is purely cosmetic — it never affects rules or planning — and is saved per browser (in `S.palette`, `localStorage`), not shared between people.
+The **Calendar colours** cards on the *Shifts & rules* page switch between 10 color schemes: **Classic** (the default), **Ocean**, **Sunset**, **Forest**, **Berry**, **Slate**, **Deep**, **Deep Bold**, **Deep Emerald**, and **Deep Crimson**. The choice is purely cosmetic — it never affects rules or planning — and is saved per browser (in `S.palette`, `localStorage`), not shared between people.
 
 - Whichever shift type sits at position 1, 4, 7… in the shift-types list gets the scheme's first color; position 2, 5, 8… gets the second; position 3, 6, 9… gets the third. Leave always gets the scheme's own dedicated color, separate from the three shift-type colors.
-- **Everywhere — on screen, on the Print / PDF button (§7) and in the shift email (§10)** — all 10 schemes keep their own colors: whichever scheme is active is exactly what you see, print and send, pastel schemes included.
-- **Dark mode is screen-only.** If your device is in dark mode the calendar uses darker backgrounds on screen, but printing always uses the light version of the chosen scheme on a light page, so a printout never comes out as a near-black sheet.
-- **Pale schemes on paper:** the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) print in their soft on-screen tones; each chip has a thin dark outline so it stays distinct, but if the printer is weak or prints greyscale, one of the four "deep" schemes gives stronger contrast.
+- **Everywhere — on screen, on the printout (§7), in the shift email and its PDF (§10)** — all 10 schemes keep their own colors: whichever scheme is active is exactly what you see, print and send, pastel schemes included.
+- **Dark mode is screen-only.** In dark mode (the device setting, or the switch in the top bar) the calendar uses darker backgrounds on screen, but printing always uses the light version of the chosen scheme on a light page, so a printout never comes out as a near-black sheet.
+- **Pale schemes on paper:** the six pastel schemes (Classic/Ocean/Sunset/Forest/Berry/Slate) print in their soft on-screen tones with a coloured left edge on each chip so it stays distinct; if the printer is weak or prints greyscale, one of the four "deep" schemes (solid chips) gives stronger contrast.
 
 ---
 
@@ -116,7 +124,7 @@ A row of swatch buttons next to the calendar switches between 10 color schemes: 
 7. **Shift-type variety** — if "Every person needs every shift type" is on, someone who worked at all that month should get at least one of each shift type, not just one.
 8. **Leave blocks shifts** — a person on leave can never be placed that day; saving leave immediately clears any shift already on those dates.
 9. **Weekend leave auto-fill** — if leave spans a weekend (leave directly either side of Saturday/Sunday — e.g. Friday + Monday, or Friday + Sunday), the weekend day(s) in between are automatically added as leave too.
-   Only a gap made up entirely of weekend days is filled; two leave dates further apart (say the 1st and the 28th) leave the weekends between them alone. (Earlier versions filled every weekend between any two leave dates — leave saved with those versions may contain extra weekend days; review it in the Leave panel.)
+   Only a gap made up entirely of weekend days is filled; two leave dates further apart (say the 1st and the 28th) leave the weekends between them alone. (Earlier versions filled every weekend between any two leave dates — leave saved with those versions may contain extra weekend days; review it in the Leave tab.)
 10. **Compulsory starters** — up to 4 named people can be forced onto a chosen shift on day 1 of the month; Auto Plot seeds them in before minimum cover runs, so they count toward it automatically, then they're treated as ordinary people for the rest of the month (see §9).
 
 ---
@@ -157,12 +165,12 @@ Auto Plot's job: produce one full month's roster that satisfies the hard rules a
 6. **Commit.** The winning plan replaces the month's shifts. The status line reports the pattern used, its score, and how many minimum-coverage/keep-apart issues (if any) remain unresolved — a non-zero count means staffing is too tight to fully satisfy every rule.
 
 ### Manual Plot
-Manual Plot places one person on one or more days at once. Pick a person, click days on the mini calendar to select them (days on leave are grayed out and can't be selected; days that already have a shift show it as a small colored tag), choose a shift type (or "Off" to clear), then apply.
+Manual Plot (the **Plot** tab beside the calendar) places one person on one or more days at once. Pick a person, click days on the mini calendar to select them (days on leave are grayed out and can't be selected; days that already have a shift show it as a small colored tag), choose a shift type (or "Off" to clear), then apply.
 
 Each selected day runs the same live checks Auto Plot's scoring penalizes for: leave conflicts, shift-type flip vs. the day before/after, minimum rest, keep-apart, and quota — so a manual placement never silently breaks a rule Auto Plot would have avoided:
 - **Hard blocks** (leave, a shift-type flip, insufficient rest, a hard keep-apart clash, or being over quota) are skipped for that day and listed in the status message; every other selected day is still applied.
 - **Soft keep-apart clashes** (sharing an ordinary weekday shift with a keep-apart partner) are batched into a single confirmation dialog covering all affected days, rather than one prompt per day.
-- "Select all" selects every day in the month that isn't a leave day for the chosen person; "Clear selection" deselects everything. The selection is also cleared automatically after applying, or when you switch person, month, or year.
+- "Select all" selects every day in the month that isn't a leave day for the chosen person; "Clear" deselects everything. The selection is also cleared automatically after applying, or when you switch person, month, or year.
 
 
 ### The math behind it
@@ -283,24 +291,27 @@ Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so
 - **Server-backed** (shared across everyone who signs in, read/written straight to disk next to `ScheduleMaster.py`): `staff.json` (`GET`/`PUT api/staff`), `records.json` (`GET`/`PUT api/records`, §8), `emails.json` (`GET`/`PUT api/emails`, §10), and `login.json` (credentials only, §*Login & access*).
 - **Browser-only** (this device/browser only, never sent to the server except when you explicitly send shifts by email): the current month's `shifts`, `leave`, planning settings, and the selected color `palette` — saved to `localStorage` under the key `schedulemaster_state` (auto-migrated once from the old key `planthat_state` if found).
 - **Confirmations** use the app's own dialog (not the browser's pop-up) for: deleting, loading (Plot) or overwriting a saved record; sending emails; clearing the month; resetting local data; removing all of a person's leave; placing a shift despite a soft keep-apart clash; reloading with unsaved staff changes; removing a staff member; removing a saved email address; and removing a shift by clicking it on the calendar. Actions that can't be undone have a red button and start with Cancel selected, so pressing Enter by accident cancels. Esc or clicking outside the dialog also cancels.
-- **Staff edits** (add, remove, import) change the list in this browser straight away but only reach `staff.json` when you click **Save**; the status line says so after each edit. **Reload** — and the next page load — replace the list with the server's copy, so Reload now asks first if there are unsaved staff edits.
-- **Reset all local data** wipes shifts, leave, and settings from *this browser only* — it does not touch `staff.json`, `records.json`, `emails.json`, or `login.json` on disk.
+- **Staff edits** (add, remove, import) change the list in this browser straight away but only reach `staff.json` when you click **Save** on the Staff page; the status line says so after each edit. **Reload** — and the next page load — replace the list with the server's copy, so Reload now asks first if there are unsaved staff edits.
+- **Reset all data in this browser** (More menu) wipes shifts, leave, and settings from *this browser only* — it does not touch `staff.json`, `records.json`, `emails.json`, `mail.json` or `login.json` on disk.
 
 ---
 
 ## 7. Printing
 
-Print produces one calendar page per month plus an optional coverage-check page, using a landscape layout that auto-shrinks (via CSS `zoom`, which reflows layout so measurements stay accurate) to fit one page, and stretches rows to fill any leftover vertical space. Every color scheme prints in its own colors, the light-mode version even when the device is in dark mode (see *Color schemes* above); earlier versions replaced the six pastel schemes with one fixed print set, so they all printed alike.
+**More › Print / PDF** prints the Roster page as a rota ledger on landscape A4: the month in serif with "Duty roster" under it and "Schedule Master" on the right, a heavy rule, then one ruled line per week with the ISO week number in the margin (weeks run Monday to Sunday), weekends shaded, and each person's shift as a tinted chip. The Workload table (and, if ticked, the coverage check) follows on its own page.
 
-The Email panel (with everyone's saved addresses) is never printed, just like the Saved records and Compulsory starters panels.
+- **One page per month**: the row height comes from the page height and the number of weeks, so 4, 5 and 6-week months all fill one page. The calendar only shrinks (via CSS `zoom`, never below 55%) when a day holds more shifts than a row can show.
+- **Printout options** (More menu): *Coverage counts on each day* (the `Day 2/2` line) and *Coverage check*.
+- Every color scheme prints in its own colors, the light-mode version even when the screen is in dark mode (see *Color schemes* above).
+- Only the Roster page is printed — never the Staff, Records, Email or Mail server pages, or the Plot / Leave / Starters panel.
 
 ---
 
 ## 8. Saved records
 
-The **Saved records** panel lets you keep a permanent, labeled history of past rosters — entirely separate from the live `S` state everything else in the app reads and writes. Saving, viewing, and deleting a record never changes what's currently plotted, and plotting or editing the live roster never changes a saved record.
+The **Records** page lets you keep a permanent, labeled history of past rosters — entirely separate from the live `S` state everything else in the app reads and writes. Saving, viewing, and deleting a record never changes what's currently plotted, and plotting or editing the live roster never changes a saved record.
 
-- **Save**: typing a label (optional — it defaults to "Month Year") and clicking "Save current month as a record" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list.
+- **Save**: typing a label (optional — it defaults to "Month Year") and clicking "Save this month" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list.
 - **View**: each record shows a one-line summary (staff/shift-type/placed-shift counts) plus a "View" button that expands the complete saved snapshot as raw JSON, so you can always refer back to exactly what was saved.
 - **Load (Plot)**: puts a record back on the calendar exactly as it was saved — its staff list, shift types, keep-apart pairs, settings, and that month's shifts and leave — so you can look at an old roster at any time. Leave in every *other* month is left as it is now. The record itself is never changed by loading it.
 - **Staff who have since left**: removing someone from the staff list never touches saved records, so loading an old record still shows that person's shifts and leave for that month, and lists them for that view; the status line names anyone who isn't on your current staff list. While a record's staff list is on screen, **Reload** takes you back to your current list, and **Save** asks first — naming who would be added back to or removed from `staff.json` — before writing the record's list there.
@@ -312,14 +323,14 @@ The **Saved records** panel lets you keep a permanent, labeled history of past r
 
 ## 9. Compulsory starters
 
-The **Compulsory starters** panel lets you name up to 4 people who must already be working a chosen shift on **day 1** of the month, before Auto Plot runs — useful when you know a specific opening lineup is required regardless of what Auto Plot would otherwise pick.
+The **Starters** tab (beside the calendar on the Roster page) lets you name up to 4 people who must already be working a chosen shift on **day 1** of the month, before Auto Plot runs — useful when you know a specific opening lineup is required regardless of what Auto Plot would otherwise pick.
 
-- **Scope: one-off, not a standing rule.** The slots apply only to the month shown when you set them. Switching month or year (via the calendar's own selectors) clears all 4 slots back to empty — they do **not** carry forward to the next month automatically.
+- **Scope: one-off, not a standing rule.** The slots apply only to the month shown when you set them. Switching month or year (the month switcher in the top bar) clears all 4 slots back to empty — they do **not** carry forward to the next month automatically.
 - **Setting it up**: each of the up to 4 slots is a person + a shift type. Leaving a slot's person or shift empty just means that slot isn't active yet.
-- **Validation, live in the panel**:
+- **Validation, live in the tab**:
   - The same person picked in two slots → blocked (duplicate), shown as a warning under the slots.
   - Two people who are a keep-apart pair, both set to start on the *same* shift → blocked, same as anywhere else a keep-apart clash would happen.
-  - These two are hard errors: Auto Plot refuses to run at all until they're fixed, and the panel tells you exactly what to change.
+  - These two are hard errors: Auto Plot refuses to run at all until they're fixed, and the tab tells you exactly what to change.
 - **Leave on day 1**: not a hard error. If a compulsory starter is on leave on the 1st, Auto Plot skips forcing that person for day 1 and places them normally instead (leave always blocks a placement, for anyone) — and says so afterwards in the status line, e.g. *"X was on leave on the 1st — placed normally instead of forced."*
 - **How Auto Plot uses it**: this runs as a new **Phase 0**, before minimum cover (see §4) — each active compulsory starter is force-placed on their chosen shift on day 1, then seeded a normal rotation-length block from there, so they count toward day 1's minimum headcount automatically rather than needing a separate carve-out. After day 1, they're treated as an ordinary person: quota, rest, keep-apart, and the fairness balancing in Phase 3 all still apply to them normally.
 - **Carryover overrides**: if forcing someone onto day 1 would normally have meant more rest, or continuing a different shift type from the end of last month, the compulsory-starter rule wins — they're placed as requested — but the status line notes the override, e.g. *"X was mid-block on Night — starting them on Day instead overrides that."*
@@ -328,33 +339,41 @@ The **Compulsory starters** panel lets you name up to 4 people who must already 
 
 ## 10. Sending shifts by email
 
-The **Email** panel (§8 on screen) lets you save one address per person and, with one click, send everyone their own dates and shift times for the month currently shown — nobody sees anyone else's schedule.
+The **Email** page lets you save one address per person and, with one click, send everyone their own dates and shift times for the month currently shown — nobody sees anyone else's schedule.
 
-- **Saved addresses** live in `emails.json` on the server (`GET`/`PUT api/emails`), separate from `staff.json` and `records.json`. Saving and sending both require `ScheduleMaster.py` to be running — the panel disables the Send button (with an explanatory tooltip) if it can't reach the server.
+- **Saved addresses** live in `emails.json` on the server (`GET`/`PUT api/emails`), separate from `staff.json` and `records.json`. Saving and sending both require `ScheduleMaster.py` to be running — the page disables the Send button (with an explanatory tooltip) if it can't reach the server.
 - **On/Off per person** — each saved address has an **On/Off** button. Turning someone **Off** keeps their address but leaves them out when you send to everyone; the list shows how many will be emailed, the confirmation names who is turned off, and the result lists them as skipped ("sending turned off"). The setting is saved in `emails.json` as an optional `"paused": [names]` list (the key only appears while someone is turned off), so it's shared by everyone who signs in, and the server enforces it when sending. Deleting a person's address also clears their Off setting.
-- **Send this month's shifts to everyone** asks for confirmation (naming how many emails will go out and which color scheme they'll be colored with), then sends one individual email per saved address through the SMTP relay set in `mail.json` (see *Mail relay settings* below — without it, a local Postfix relay on the same machine, no login required).
+- **Send shifts to everyone** asks for confirmation (naming how many emails will go out and which color scheme they'll be colored with), then sends one individual email per saved address through the SMTP relay set on the **Mail server** page / in `mail.json` (see *Mail relay settings* below — without it, a local Postfix relay on the same machine, no login required).
 - **Each email contains three things:**
-  1. The message itself: a month calendar grid plus a dated list of that person's shifts, colored with the active scheme's on-screen colors (see *Color schemes*), with a plain-text version for mail apps that don't show formatted email.
-  2. A one-page **PDF month calendar** for that person — a Sun–Sat grid (the same layout as the on-screen/printed calendar, not a plain list), with a shift-count summary and legend, colored using whichever calendar scheme was active in the browser when you clicked Send — see *Color schemes* above for exactly how a scheme's colors carry over.
+  1. The message itself, laid out as a **rota ledger**: the month in serif with "rota for *name*", one ruled line per week with the ISO week number in the margin, each working day marked with its shift's letter in the active scheme's colors (see *Color schemes*), days off as a faint dot, and the totals per shift type (with their hours) and leave at the foot. Marks are the shift type's first letter (`D`, `N`, or `M` / `A` / `E`); when two types start with the same letter, or one starts with `L` (which means leave), they get two letters instead (`Da`, `Du`, `La`). It's built from tables with inline styles so it shows properly in Outlook and Gmail, and comes with a plain-text version for mail apps that don't show formatted email.
+  2. A one-page **PDF** of the same rota ledger on landscape A4 — each working day shows the shift's name and hours — with the totals at the foot, colored using whichever calendar scheme was active in the browser when you clicked Send.
   3. A **calendar file (`.ics`)** the recipient can import into their phone or calendar app — one event per shift (correctly spanning midnight for overnight shifts like the default Night shift) plus an all-day event for each day of leave.
      Times are "floating" local times — the same wall-clock hours shown in the app — so they land at those hours on the recipient's calendar whatever its time zone setting. Each event's ID is fixed per person + date, so importing a re-sent month updates that day's event instead of adding a duplicate (most calendar apps; a few simply re-import). A shift type whose start/end time can't be read is added as an all-day event rather than failing the send.
-- **Both attachments are named after the recipient**, not a generic filename — `Shifts_YYYY-MM_Full Name.pdf` / `.ics` (e.g. `Shifts_2026-09_Dzidula Gati.pdf`).
-- **After sending**, the panel reports how many emails were sent, and lists anyone **skipped** (no valid-looking email address on file) or **failed** (the relay rejected or couldn't be reached), each with a reason.
+- **Both attachments are named after the recipient**, not a generic filename — `Shifts_YYYY-MM_Full Name.pdf` / `.ics` (e.g. `Shifts_2026-09_Ama Mensah.pdf`).
+- **After sending**, the page reports how many emails were sent, and lists anyone **skipped** (no valid-looking email address on file) or **failed** (the relay rejected or couldn't be reached), each with a reason.
 - The PDF is generated with a small dependency-free writer built into `ScheduleMaster.py` itself — no `reportlab` or other third-party package required, consistent with the rest of the app.
+
+### Mail server page
+
+The **Mail server** button in the top bar asks for the admin password (the sign-in password; wrong guesses count toward the same 5-attempt lockout), then swaps the app for one page with the relay settings: SMTP server, security (**None**, **STARTTLS** or **SSL/TLS**), port (filled in as 25 / 587 / 465 when you change security, unless you typed your own), username, password, From address and From name.
+
+- **Save** writes them to `mail.json` (see below), keeping any `_note` keys you added by hand. The saved password is never shown or sent back to the page — leave the box blank to keep it, or tick *Remove the saved password*.
+- **Send test** sends one email to an address you type, through the saved settings, and shows the relay's own error if it fails.
+- The page stays open for this sign-in for 10 minutes after the password or the last save; **Back to planner** closes it and locks it again. While it's open, the tabs and other controls are hidden.
 
 ### Mail relay settings (`mail.json`)
 
-Put the relay settings in `mail.json` next to `ScheduleMaster.py` (on an installed VM: `/opt/schedulemaster/mail.json`):
+The Mail server page writes `mail.json` next to `ScheduleMaster.py` (on an installed VM: `/opt/schedulemaster/mail.json`); you can also edit it by hand:
 
 ```json
-{ "host": "10.0.0.25", "port": 587, "from_name": "Schedule Master", "from_addr": "rota@example.com",
-  "username": "rota", "password": "secret", "use_tls": true }
+{ "host": "smtp.example.com", "port": 587, "from_name": "Schedule Master", "from_addr": "rota@example.com",
+  "username": "rota", "password": "secret", "security": "starttls" }
 ```
 
-- Every key is optional — anything left out keeps the default from the `SMTP_*` lines at the top of `ScheduleMaster.py` (`127.0.0.1:25`, from `scheduler@localhost`, no login, no TLS). No `mail.json` at all means exactly those defaults. `use_tls` turns on STARTTLS; `username` + `password` turn on login. Keys starting with `_` are ignored, so you can leave notes.
+- Every key is optional — anything left out keeps the default from the `SMTP_*` lines at the top of `ScheduleMaster.py` (`127.0.0.1:25`, from `scheduler@localhost`, no login, no TLS). No `mail.json` at all means exactly those defaults. `security` is `"none"`, `"starttls"` or `"ssl"` (SSL/TLS from the first byte, usually port 465); older files with `"use_tls": true` / `false` still work and mean STARTTLS / none. `username` + `password` turn on login. Keys starting with `_` are ignored, so you can leave notes.
 - It's read fresh on every send — **no restart needed** after editing it.
 - `install.sh` **never overwrites it** (like `staff.json`/`records.json`/`emails.json`/`login.json`) and keeps it readable by the app's own user only, since it can hold the relay password. Like the other data files, it's never served over the web.
-- If it can't be used (broken JSON, a misspelled key such as `"pasword"`, a port that isn't a number), **nothing is sent** and the Email panel shows why — it never quietly falls back to a different relay. The server also prints the relay it will use (and any problem with `mail.json`) when it starts.
+- If it can't be used (broken JSON, a misspelled key such as `"pasword"`, a port that isn't a number), **nothing is sent** and the Email page shows why — it never quietly falls back to a different relay. The server also prints the relay it will use (and any problem with `mail.json`) when it starts.
 - Editing the `SMTP_*` lines in `ScheduleMaster.py` still works, but an upgrade replaces that file, so `mail.json` is the place for your settings.
 
 ---
