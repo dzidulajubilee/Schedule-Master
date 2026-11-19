@@ -5,29 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Schedule Master</title>
 <style>
+/* ---------- tokens ----------
+   Warm paper neutrals and one deep teal accent; the shift colours come from the selected colour scheme
+   (--chip-1..3, --leave). Page and month titles use a serif, like a printed wall planner. */
 :root{
-  --bg:#f6f5f2; --panel:#ffffff; --border:#dedad2; --text:#221f1a; --muted:#726d63;
-  --accent:#0f6b5c; --accent-ink:#ffffff;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --serif:Charter,"Bitstream Charter","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  --bg:#f6f5f2; --panel:#ffffff; --raised:#efede7; --sunk:#faf9f6;
+  --border:rgba(34,31,26,.12); --border2:rgba(34,31,26,.2);
+  --text:#221f1a; --t2:#57524a; --muted:#736e64;
+  --accent:#0f6b5c; --accent-ink:#ffffff; --accent-soft:#e3efec;
   --leave:#c94a3f; --leave-bg:#fbe6e3;
-  --warn:#b3771b; --warn-bg:#fbead2; --bad:#c94a3f; --ok:#1d7a4c; --ok-bg:#dcf5e2;
+  --warn:#9a6212; --warn-bg:#fbead2; --bad:#b8392f; --ok:#1d7a4c; --ok-bg:#dcf5e2;
   --chip-1:#2e6fec; --chip-1-bg:#e6edfd;
   --chip-2:#c9781a; --chip-2-bg:#fbeadb;
   --chip-3:#6a52d6; --chip-3-bg:#ece8fb;
+  --r:8px; --rl:12px; --ease:cubic-bezier(.22,1,.36,1);
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media screen and (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
-    --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
+    --bg:#161512; --panel:#1f1d19; --raised:#2a2722; --sunk:#1a1916; --border:rgba(238,236,229,.09); --border2:rgba(238,236,229,.16);
+    --text:#eeece5; --t2:#bdb7aa; --muted:#a39c8d; --accent:#3aa58f; --accent-ink:#0f1513; --accent-soft:#1c302b;
+    --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743; --bad:#f0786c;
   }
 }
-/* dark theme is screen-only (also in the @media blocks above/below): printing always uses the light
-   version of the chosen scheme, since a dark page background would print as a near-black sheet */
+/* dark theme is screen-only: printing always uses the light version of the chosen scheme */
 @media screen{
 :root[data-theme="dark"]{
-  --bg:#171613; --panel:#211f1b; --border:#3a372f; --text:#eeece5; --muted:#a39c8d;
-  --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743;
+  --bg:#161512; --panel:#1f1d19; --raised:#2a2722; --sunk:#1a1916; --border:rgba(238,236,229,.09); --border2:rgba(238,236,229,.16);
+  --text:#eeece5; --t2:#bdb7aa; --muted:#a39c8d; --accent:#3aa58f; --accent-ink:#0f1513; --accent-soft:#1c302b;
+  --leave-bg:#3a201c; --chip-1-bg:#1c2740; --chip-2-bg:#3a2a14; --chip-3-bg:#2a2340; --ok-bg:#123625; --ok:#6fdb9a; --warn-bg:#3a2a10; --warn:#e3a743; --bad:#f0786c;
 }
 }
 /* ---- selectable calendar color schemes (§ palette swatches near the calendar) ----
@@ -113,159 +123,327 @@
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 *{box-sizing:border-box;}
-body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;}
-h1,h2,h3{margin:0 0 8px;font-weight:700;}
-h1{font-size:18px;letter-spacing:-.01em;}
-h2{font-size:13px;color:var(--muted);text-transform:none;font-weight:600;margin:0 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px;}
-button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:6px 10px;}
+[hidden]{display:none!important;}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--sans);-webkit-font-smoothing:antialiased;}
+h1,h2,h3{margin:0;font-weight:600;}
+code{font-family:var(--mono);font-size:12px;}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+
+/* ---------- controls ---------- */
+button,summary.btn{font:inherit;font-size:13px;font-weight:500;height:32px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease),opacity .15s var(--ease),transform .1s var(--ease);}
+button:hover,summary.btn:hover{background:var(--raised);}
+button:active{transform:scale(.98);}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none;}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
-button:hover{filter:brightness(0.97);}
-button:disabled{opacity:.45;cursor:not-allowed;}
-/* Email list: per-person "include in send to everyone" switch */
-button.mail-toggle{padding:2px 8px;min-width:46px;font-size:11px;font-weight:700;border-radius:999px;}
-button.mail-toggle[aria-pressed="true"]{background:var(--ok-bg);color:var(--ok);border-color:var(--ok);}
-button.mail-toggle[aria-pressed="false"]{background:var(--panel);color:var(--muted);}
-/* In-app confirmation dialog (replaces the browser's confirm() popup) - see askConfirm() */
-#smDialog{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;background:rgba(15,20,28,.45);backdrop-filter:blur(2px);padding:16px;}
-#smDialog.open{display:flex;}
-#smDialog .dlg{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px 22px 18px;}
-#smDialog .dlg-head{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
-#smDialog .dlg-icon{flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;background:var(--ok-bg);color:var(--accent);}
-#smDialog.danger .dlg-icon{background:var(--leave-bg);color:var(--bad);}
-#smDialog h3{margin:0;font-size:16px;}
-#smDialog .dlg-msg{font-size:13.5px;line-height:1.5;margin:0 0 10px 46px;white-space:pre-line;}
-#smDialog .dlg-details{margin:0 0 14px 46px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:12.5px;line-height:1.55;}
+button.primary:hover{background:var(--accent);opacity:.88;}
+button.quiet{background:transparent;border-color:transparent;color:var(--t2);}
+button.quiet:hover{background:var(--raised);color:var(--text);}
+button.icon{width:32px;padding:0;}
+button.danger-text:hover{color:var(--bad);}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+input,select{font:inherit;font-size:13px;height:32px;border:1px solid var(--border2);border-radius:var(--r);background:var(--panel);color:var(--text);padding:0 10px;min-width:0;}
+input::placeholder{color:var(--muted);}
+input[type=number]{font-variant-numeric:tabular-nums;}
+input[type=time]{font-family:var(--mono);font-size:12px;}
+label{font-size:13px;color:var(--t2);}
+label.check{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+/* checkboxes stay real <input type="checkbox">; drawn in the accent */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:16px;height:16px;margin:0;padding:0;display:inline-grid;place-content:center;cursor:pointer;
+  border:1.5px solid var(--border2);border-radius:4px;background:var(--panel);transition:background-color .15s var(--ease),border-color .15s var(--ease);}
+input[type=checkbox]::before{content:"";width:10px;height:10px;background:var(--accent-ink);clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0,43% 62%);transform:scale(0);transition:transform .12s var(--ease);}
+input[type=checkbox]:hover:not(:disabled){border-color:var(--accent);}
+input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent);}
+input[type=checkbox]:checked::before{transform:scale(1);}
+input[type=checkbox]:disabled{opacity:.45;cursor:not-allowed;}
+input[type=radio]{accent-color:var(--accent);margin:0;}
+label:has(> input[type=checkbox]){cursor:pointer;}
+
+/* ---------- top bar and tabs ---------- */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--panel);border-bottom:1px solid var(--border);}
+.bar{display:flex;align-items:center;gap:8px;min-height:56px;padding:8px 20px;max-width:1600px;margin:0 auto;}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-size:18px;font-weight:600;margin-right:16px;white-space:nowrap;}
+.brand svg{width:20px;height:20px;color:var(--accent);flex:none;}
+.monthNav{display:flex;align-items:center;gap:2px;}
+.monthNav select{border-color:transparent;font-size:15px;font-weight:500;background:transparent;padding:0 6px;}
+.monthNav input{width:72px;border-color:transparent;font-size:15px;font-weight:500;background:transparent;padding:0 6px;}
+.monthNav select:hover,.monthNav input:hover{border-color:var(--border2);}
+.spacer{flex:1;}
+details.menu{position:relative;}
+details.menu>summary{list-style:none;}
+details.menu>summary::-webkit-details-marker{display:none;}
+details.menu[open]>summary{background:var(--raised);}
+.menuPanel{position:absolute;right:0;top:calc(100% + 6px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px;display:flex;flex-direction:column;z-index:30;}
+.menuPanel button{justify-content:flex-start;border:0;background:transparent;width:100%;height:34px;padding:0 10px;}
+.menuPanel button:hover{background:var(--raised);}
+.menuPanel hr{border:0;border-top:1px solid var(--border);margin:4px 0;}
+.menuPanel .menuLabel{font-size:12px;color:var(--muted);padding:6px 10px 2px;}
+.menuPanel label.check{padding:6px 10px;}
+.tabs{display:flex;gap:4px;padding:0 20px;max-width:1600px;margin:0 auto;overflow-x:auto;scrollbar-width:none;}
+.tab{height:40px;border:0;border-radius:0;background:transparent;color:var(--t2);padding:0 12px;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab:hover{background:transparent;color:var(--text);}
+.tab[aria-current=page]{color:var(--text);border-bottom-color:var(--accent);}
+.tab .count{font:12px var(--mono);color:var(--muted);}
+
+/* ---------- pages ---------- */
+.main{max-width:1600px;margin:0 auto;padding:24px 20px 48px;}
+.page{display:none;}
+:root[data-page=roster] .page[data-page=roster],:root[data-page=staff] .page[data-page=staff],:root[data-page=rules] .page[data-page=rules],
+:root[data-page=records] .page[data-page=records],:root[data-page=email] .page[data-page=email]{display:block;}
+.pageHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
+.pageHead h1{font-family:var(--serif);font-size:30px;font-weight:500;letter-spacing:-.01em;line-height:1.15;}
+.pageHead p{margin:6px 0 0;font-size:13px;color:var(--t2);max-width:640px;}
+.status{font-size:13px;color:var(--t2);margin:0 0 20px;padding:8px 12px;border-left:3px solid var(--accent);background:var(--panel);border-radius:0 var(--r) var(--r) 0;white-space:pre-wrap;}
+.status:empty{display:none;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);padding:20px;}
+.card+.card{margin-top:16px;}
+.card h2{font-size:15px;}
+.card .desc{margin:4px 0 16px;font-size:13px;color:var(--t2);}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;}
+.grid2>.card+.card{margin-top:0;}
+.narrow{max-width:760px;}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;}
+.row>input[type=text],.row>input[type=email]{flex:1;}
+.small{font-size:12px;color:var(--muted);}
+.hint{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0;}
+
+/* ---------- roster ---------- */
+.rosterHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
+.rosterHead h1{font-family:var(--serif);font-size:34px;font-weight:500;letter-spacing:-.01em;line-height:1.1;margin:0;border:0;padding:0;}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--t2);}
+.legend-pill{display:inline-flex;align-items:center;gap:6px;}
+.legend-pill::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--pill-bg);box-shadow:inset 0 0 0 1.5px var(--pill-ink);}
+.legend-pill.leave-pill::before{background:var(--leave-bg);box-shadow:inset 0 0 0 1.5px var(--leave);}
+.legend-pill .legend-time{font:12px var(--mono);color:var(--muted);}
+.roster{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start;}
+.calwrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);padding:12px;}
+.calhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 4px 12px;}
+.calhead label{font-size:13px;}
+.calhead select{min-width:180px;}
+.calScroll{overflow-x:auto;}
+.calInner{min-width:760px;}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.wd{font-size:12px;font-weight:500;color:var(--muted);padding:4px 6px 6px;}
+#calGrid{display:flex;flex-direction:column;gap:4px;}
+.calweek{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.day{border:1px solid var(--border);border-radius:var(--r);min-height:118px;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--panel);}
+.day.weekend{background:var(--sunk);}
+.day.empty{border-color:transparent;background:transparent;}
+.daytop{display:flex;flex-direction:column;gap:2px;margin-bottom:2px;}
+.daynum{font-size:13px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;padding:0 2px;}
+.day.today .daynum{color:var(--accent);}
+.badges{display:flex;flex-wrap:wrap;gap:0 8px;padding:0 2px;}
+.badge-pill{background:none!important;color:var(--muted)!important;font:10.5px var(--mono);white-space:nowrap;line-height:1.4;padding:0;}
+.badge-pill.warn{color:var(--warn)!important;}
+.badge-pill.low{color:var(--bad)!important;font-weight:700;}
+.chiplist{display:flex;flex-direction:column;gap:3px;}
+.chip{display:block;font-size:12px;font-weight:500;line-height:1.3;border-radius:5px;padding:3px 7px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:filter .12s var(--ease);}
+.chip:hover{filter:brightness(.95);}
+.chip.leave{background:var(--leave-bg);color:var(--leave);cursor:default;}
+/* tools: Plot / Leave / Starters */
+.tools{position:sticky;top:120px;}
+.toolTabs{display:flex;gap:2px;padding:2px;background:var(--raised);border-radius:var(--r);margin-bottom:16px;}
+.toolTabs button{flex:1;height:28px;border:0;background:transparent;color:var(--t2);border-radius:6px;padding:0 8px;}
+.toolTabs button:hover{background:transparent;color:var(--text);}
+.toolTabs button[aria-selected=true]{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.tools select{width:100%;}
+.mptypes{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 4px;}
+.mptypes label{display:inline-flex;align-items:center;gap:6px;}
+.mpwd{text-align:center;font-size:11px;color:var(--muted);padding:2px 0;}
+.mpgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.mpday{height:38px;border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-size:12px;user-select:none;background:var(--panel);font-variant-numeric:tabular-nums;transition:border-color .12s var(--ease),background-color .12s var(--ease);}
+.mpday:hover{border-color:var(--border2);}
+.mpday.weekend{background:var(--sunk);}
+.mpday.leave{cursor:not-allowed;opacity:.6;}
+.mpday.empty{visibility:hidden;cursor:default;}
+.mpday.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft);}
+.mpdaynum{font-size:12px;color:var(--text);}
+.mptag{display:block;width:18px;height:6px;border-radius:2px;font-size:0;overflow:hidden;padding:0;border:1.5px solid currentColor;}
+#mpWeekdayRow,#leaveWeekdayRow{gap:4px;margin-top:12px;}
+#leaveList{margin-top:16px;display:flex;flex-direction:column;gap:8px;font-size:12px;}
+#leaveList .chip{display:inline-flex;font-size:12px;}
+.cs-slot{display:flex;gap:8px;align-items:center;margin:8px 0;}
+.cs-slot select{flex:1;min-width:0;}
+/* workload */
+.workloadCard{margin-top:16px;}
+.workloadHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.tableWrap{overflow-x:auto;}
+table{border-collapse:collapse;width:100%;font-size:13px;}
+th,td{border:0;border-bottom:1px solid var(--border);padding:8px 12px;text-align:left;font-variant-numeric:tabular-nums;}
+th{font-size:12px;font-weight:500;color:var(--muted);background:none;white-space:nowrap;}
+tr:last-child td{border-bottom:0;}
+table.workload td.ok{color:var(--muted);}
+table.workload td.bad{color:var(--bad);}
+#coverageSection{margin-top:20px;}
+#coverageSection h2{font-size:15px;margin-bottom:8px;}
+#coverageCheck{font-size:13px;line-height:1.6;color:var(--t2);}
+
+/* ---------- staff, rules, records, email ---------- */
+.pill-list{list-style:none;margin:12px 0 0;padding:0;border:1px solid var(--border);border-radius:var(--r);max-height:460px;overflow:auto;}
+.pill{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:4px 6px 4px 12px;border-bottom:1px solid var(--border);font-size:13px;}
+.pill:last-child{border-bottom:0;}
+.pill button{height:28px;padding:0 10px;border-color:transparent;background:transparent;color:var(--t2);}
+.pill button:hover{background:var(--raised);color:var(--bad);}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+.stHead,.shifttype-row{display:grid;grid-template-columns:16px minmax(140px,1fr) 128px 128px 84px 84px 84px 48px 60px;gap:8px;align-items:center;}
+.stHead{font-size:12px;color:var(--muted);padding:0 0 8px;border-bottom:1px solid var(--border);}
+.stHead span{line-height:1.2;}
+.stHead .c{text-align:center;}
+.shifttype-row{padding:8px 0;border-bottom:1px solid var(--border);}
+.shifttype-row input[type=text],.shifttype-row input[type=time],.shifttype-row input[type=number]{width:100%;}
+.shifttype-row input[type=number]{text-align:center;padding:0 4px;}
+.shifttype-row>input[type=checkbox]{justify-self:center;}
+.shifttype-row .dot{border-radius:4px!important;}
+.stScroll{overflow-x:auto;}
+.stInner{min-width:800px;max-width:1080px;}
+.settings{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;margin-top:16px;}
+.settings label.field{display:inline-flex;align-items:center;gap:8px;}
+.checks{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+details.explain{margin-top:16px;font-size:12px;color:var(--t2);}
+details.explain summary{cursor:pointer;color:var(--t2);font-size:13px;}
+details.explain ul{margin:8px 0 0;padding-left:18px;line-height:1.6;}
+#keepApartUI .row label{width:56px;font-size:12px;color:var(--muted);}
+#keepApartUI select{flex:1;}
+#paletteRow{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin-top:4px;}
+.swatch{height:auto;padding:8px;display:flex;flex-direction:column;align-items:stretch;gap:6px;border:1px solid var(--border);border-radius:var(--r);background:var(--panel)!important;font-size:12px;color:var(--t2);}
+.swatch .bars{display:flex;height:16px;border-radius:4px;overflow:hidden;}
+.swatch .bars i{flex:1;}
+.swatch.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);color:var(--text);}
+.record-card{border:1px solid var(--border);border-radius:var(--r);padding:12px;}
+.record-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.record-head button{height:28px;padding:0 10px;}
+.record-meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.record-summary{margin-top:4px;}
+.record-json{white-space:pre-wrap;word-break:break-word;background:var(--sunk);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:8px;max-height:260px;overflow:auto;font:11px/1.5 var(--mono);}
+#recordsList{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+#emailList{display:flex;flex-direction:column;margin-top:12px;font-size:13px;}
+#emailList>.row{margin:0;padding:6px 0;border-bottom:1px solid var(--border);gap:12px!important;flex-wrap:nowrap;}
+#emailList>.row span.small{font-family:var(--mono);}
+#emailList>.small{margin-top:12px;}
+#emailList button[data-name]{height:28px;padding:0 10px;border-color:transparent;background:transparent;color:var(--t2);}
+#emailList button[data-name]:hover{background:var(--raised);color:var(--bad);}
+button.mail-toggle{height:22px;min-width:44px;padding:0 8px;font-size:11px;border-radius:11px;flex:none;}
+button.mail-toggle[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent;}
+button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--muted);}
+#emailSendResult{margin-top:12px;font-size:13px;color:var(--t2);}
+
+/* ---------- dialogs ---------- */
+#smDialog,.pwBack{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;background:rgba(18,16,12,.42);padding:16px;}
+#smDialog.open,.pwBack{display:flex;}
+#smDialog .dlg,.pwBack .dlg{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.16);width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;}
+#smDialog .dlg-head{margin-bottom:8px;}
+#smDialog .dlg-icon{display:none;}
+#smDialog h3,.pwBack h3{margin:0;font-size:16px;}
+#smDialog .dlg-msg,.pwBack .dlg-msg{font-size:13px;line-height:1.55;color:var(--t2);margin:0 0 12px;white-space:pre-line;}
+#smDialog .dlg-details{margin:0 0 12px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--sunk);font-size:13px;line-height:1.6;}
 #smDialog .dlg-details:empty{display:none;}
 #smDialog .dlg-details b{font-weight:600;}
-#smDialog .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
-#smDialog .dlg-actions button{padding:7px 14px;}
+#smDialog .dlg-actions,.pwBack .dlg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
 #smDialog.danger .dlg-ok{background:var(--bad);border-color:var(--bad);color:#fff;}
-input,select{font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);padding:5px 7px;}
-label{font-size:12px;color:var(--muted);}
-/* Modern checkboxes (all 6: print options, the two rule settings, Flexible / Keep-apart per shift type).
-   Purely visual: each stays a real <input type="checkbox">, so label clicks, keyboard (Space/Tab),
-   .checked and change events behave exactly as before. Colours come from the theme variables, so they
-   follow light/dark mode and the app's accent instead of the browser's default blue. */
-input[type=checkbox]{
-  -webkit-appearance:none; appearance:none; flex:none;
-  width:18px; height:18px; margin:0; padding:0; vertical-align:-4px;
-  display:inline-grid; place-content:center; cursor:pointer;
-  border:1.5px solid var(--muted); border-color:color-mix(in srgb, var(--muted) 55%, transparent);
-  border-radius:5px; background:var(--panel);
-  transition:background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+.pwBack input{width:100%;}
+.pwErr{margin-top:12px;padding:8px 12px;border-radius:var(--r);background:var(--leave-bg);color:var(--bad);font-size:13px;}
+
+/* ---------- sign in ---------- */
+#loginOverlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:9999;padding:16px;}
+.loginBox{width:100%;max-width:360px;}
+.loginBox .brand{margin:0 0 24px;}
+.loginCard{background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);padding:24px;}
+.loginCard h1{font-family:var(--serif);font-size:24px;font-weight:500;}
+.loginCard p{margin:4px 0 20px;font-size:13px;color:var(--t2);}
+.loginCard label{display:block;font-size:12px;font-weight:500;margin:16px 0 6px;}
+.loginCard input{width:100%;height:40px;}
+.loginCard button{width:100%;height:40px;margin-top:20px;}
+#loginError{margin-top:12px;font-size:13px;color:var(--bad);min-height:18px;}
+
+/* ---------- Mail server page (admin password) ---------- */
+:root.mailMode .tabs,:root.mailMode .page,:root.mailMode #status{display:none!important;}
+:root.mailMode .bar>:not(.brand):not(.spacer):not(#btnLogout){display:none!important;}
+.mailGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin:20px 0 16px;}
+.mailGrid label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:500;}
+.mailGrid label input,.mailGrid label select{width:100%;}
+.mailGrid .wide{grid-column:1/-1;}
+.mailHead{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.mailMsg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:var(--r);background:var(--sunk);color:var(--t2);}
+.mailMsg.ok{background:var(--accent-soft);color:var(--accent);}
+.mailMsg.bad{background:var(--leave-bg);color:var(--bad);}
+.mailMsg.warn{background:var(--warn-bg);color:var(--warn);}
+.mailTest{border-top:1px solid var(--border);margin-top:20px;padding-top:16px;}
+#mailView .card{margin:0 auto;}
+
+/* ---------- small screens ---------- */
+@media (max-width:1240px){.roster{grid-template-columns:1fr;}.tools{position:static;}}
+@media (max-width:960px){.grid2{grid-template-columns:1fr;}}
+@media (max-width:760px){
+  .bar{flex-wrap:wrap;padding:8px 12px;}
+  .spacer{display:none;}
+  #btnAuto{margin-left:auto;}
+  .brand{margin-right:4px;}
+  .tabs{padding:0 12px;}
+  .main{padding:16px 12px 40px;}
+  .mailGrid{grid-template-columns:1fr;}
+  .rosterHead h1{font-size:28px;}
 }
-input[type=checkbox]::before{ /* the tick: drawn with a clip-path, scaled in when checked */
-  content:""; width:11px; height:11px; background:var(--accent-ink);
-  clip-path:polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
-  transform:scale(0); transition:transform .12s ease-in-out;
-}
-input[type=checkbox]:hover:not(:disabled){border-color:var(--accent);}
-input[type=checkbox]:checked{background:var(--accent); border-color:var(--accent);}
-input[type=checkbox]:checked::before{transform:scale(1);}
-input[type=checkbox]:focus-visible{outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);}
-input[type=checkbox]:disabled{opacity:.45; cursor:not-allowed;}
-label:has(> input[type=checkbox]){cursor:pointer;}
-table{border-collapse:collapse;width:100%;font-size:12.5px;}
-th,td{border:1px solid var(--border);padding:5px 7px;text-align:left;}
-th{background:var(--bg);font-weight:600;}
-.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:env(safe-area-inset-top,0px);z-index:5;}
-#loginOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:9999;padding:16px;}
-#loginOverlay input{padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);font-size:14px;}
-.top .spacer{flex:1;}
-.wrap{display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px;max-width:1500px;margin:0 auto;}
-@media(max-width:900px){.wrap{grid-template-columns:1fr;}}
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;overflow-x:auto;}
-.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0;}
-.pill-list{list-style:none;margin:6px 0;padding:0;display:flex;flex-wrap:wrap;gap:6px;}
-.pill{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;padding:3px 4px 3px 10px;font-size:12.5px;}
-.pill button{border:none;background:none;padding:2px 6px;border-radius:50%;}
-.status{font-size:12.5px;color:var(--muted);margin-top:6px;white-space:pre-wrap;}
-.shifttype-row{display:grid;grid-template-columns:22px 150px 74px 74px 78px 78px 78px 56px 56px;gap:6px;align-items:center;margin:3px 0;font-size:12px;}
-.shifttype-row input[type=text],.shifttype-row input[type=time]{width:100%;padding:3px 4px;}
-.shifttype-row input[type=number]{width:100%;padding:3px 2px;text-align:center;}
-.shifttype-row>span{white-space:normal;line-height:1.15;text-align:center;}
-.shifttype-row>input[type=checkbox]{justify-self:center;} /* fixed-size modern checkbox: keep it centred under its column heading */
-.calwrap{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;}
-.calhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
-.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:12px;}
-.legend-pill{display:inline-flex;align-items:center;gap:6px;background:var(--pill-bg);color:var(--pill-ink);padding:4px 11px;border-radius:999px;font-weight:600;}
-.legend-pill .legend-time{font-weight:500;opacity:.75;font-size:10.5px;}
-.legend-pill.leave-pill{background:var(--leave-bg);color:var(--leave);}
-#calGrid{display:flex;flex-direction:column;gap:6px;}
-.calweek{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
-.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
-.wd{text-align:center;font-size:11px;color:var(--muted);font-weight:600;padding-bottom:2px;}
-.day{border:1px solid var(--border);border-radius:8px;min-height:88px;padding:5px;display:flex;flex-direction:column;gap:2px;}
-.daytop{display:flex;align-items:flex-start;justify-content:space-between;gap:4px;}
-.day.weekend{background:color-mix(in srgb, var(--bg) 60%, var(--panel));}
-.day.empty{border:none;}
-.daynum{font-size:11px;color:var(--muted);font-weight:600;}
-.chip{display:block;font-size:10.5px;border-radius:5px;padding:1px 5px;margin-top:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.chip.leave{background:var(--leave-bg);color:var(--leave);font-weight:600;}
-.badges{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start;gap:2px;max-width:62%;flex:0 0 auto;}
-.badge-pill{background:var(--badge-bg);color:var(--badge-ink);font-size:9px;font-weight:600;font-variant-numeric:tabular-nums;border-radius:5px;padding:1px 6px;white-space:nowrap;line-height:1.5;}
-.badge-pill.low{background:var(--leave-bg);color:var(--leave);font-weight:700;}
-.badge-pill.warn{background:var(--warn-bg);color:var(--warn);font-weight:700;}
-table.workload td.bad{color:var(--bad);}
-table.workload td.ok{color:var(--ok);}
-.small{font-size:11px;color:var(--muted);}
-.hint{font-size:11px;color:var(--muted);margin:2px 0 6px;}
-.mpwd{text-align:center;font-size:10px;color:var(--muted);font-weight:600;padding-bottom:2px;}
-.mpgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
-.mpday{border:1px solid var(--border);border-radius:6px;min-height:38px;padding:2px 1px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:2px;cursor:pointer;font-size:10.5px;user-select:none;background:var(--panel);transition:outline-color .1s,background .1s;}
-.mpday:hover{filter:brightness(0.97);}
-.mpday.weekend{background:color-mix(in srgb, var(--bg) 60%, var(--panel));}
-.mpday.leave{cursor:not-allowed;opacity:.55;}
-.mpday.empty{border:none;visibility:hidden;cursor:default;}
-.mpday.selected{outline:2px solid var(--accent);outline-offset:-1px;background:color-mix(in srgb, var(--accent) 16%, var(--panel));}
-.mpdaynum{font-size:10.5px;color:var(--muted);font-weight:600;}
-.mptag{font-size:8.5px;font-weight:600;border-radius:4px;padding:0 4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.record-card{border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
-.record-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
-.record-meta{font-size:11px;color:var(--muted);margin-top:2px;}
-.record-summary{margin-top:4px;}
-.record-json{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;max-height:260px;overflow:auto;font-size:11px;}
-.swatch{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);padding:0;cursor:pointer;}
-.swatch.active{outline:2px solid var(--text);outline-offset:2px;}
-.cs-slot{display:flex;gap:6px;align-items:center;margin:5px 0;}
-.cs-slot select{flex:1;min-width:0;}
-.cs-slot button{flex:0 0 auto;}
-@page{ size: landscape; margin: 9mm; }
+@media (max-width:520px){.brand span,#btnLogout span,#mailBtn span{display:none;}#btnLogout,#mailBtn{width:32px;padding:0;}}
+
+/* ---------- print: the roster only, always the light version of the chosen scheme ----------
+   A rota ledger, like the emailed PDF: the month in serif over a heavy rule, one ruled line per week with
+   the week number in the margin, weekends shaded, each person's shift as a tinted chip. */
+@page{ size: landscape; margin: 10mm; }
 @media print{
-  .top,.wrap>.panel:first-child,#leftpanel,#shiftTypesPanel,#recordsPanel,#csPanel,#emailPanel,#paletteRow,#loginOverlay,#smDialog{display:none !important;}
-  .wrap{display:block;padding:0;}
-  .calwrap{border:none;box-shadow:none;page-break-after:always;padding:6px 10px;}
-  #validationPage{page-break-before:always;}
-  body{font-size:11px;}
-  .badges.hideprint{display:none;}
-  #coverageSection.hideprint{display:none;}
-  /* force the browser to actually print background colors instead of silently dropping them */
+  .top,.tools,.status,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
+  .page[data-page=roster]{display:block!important;}
+  .printOnly{display:block!important;}
+  #wlMonth{display:inline!important;}
+  .wkno{display:block!important;}
+  body{font-size:11px;background:#fff;color:#221f1a;}
   *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}
-  /* every colour scheme prints in its own colours (the light-mode version - dark mode is screen-only,
-     see the top of this stylesheet). Previously the six light schemes were all replaced on paper by
-     one fixed "print-safe" set, so choosing Ocean, Sunset etc. made no difference to the printout.
-     Chips keep the thin dark outline below so pale chips stay distinct on paper. Only the day-cell
-     border is darkened for paper on the light schemes, as before (the deep schemes keep theirs). */
-  :root:not([data-palette^="deep"]){
-    --border:#8a8578 !important;
-  }
-  .chip{font-weight:700;border:1px solid rgba(0,0,0,.25);font-size:9px;padding:0 4px;margin-top:1px;}
-  .badge-pill{border:1px solid rgba(0,0,0,.2);font-size:8px;padding:0 4px;}
-  .grid,.calweek{gap:3px;}
-  .day{min-height:0;padding:3px;}
-  .daynum{font-size:9.5px;}
-  .legend{margin-bottom:6px;gap:5px;}
-  .legend-pill{padding:2px 8px;font-size:10px;}
-  /* a week is one visual unit - never let a print page-break fall in the middle of one (fixes overflow/orphan-fragment bugs) */
+  .main{padding:0;max-width:none;}
+  .roster{display:block;}
+  .card,.calwrap{border:0;padding:0;border-radius:0;background:none;}
+  .calScroll{overflow:visible;}.calInner{min-width:0;}
+  /* header */
+  .rosterHead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin:0 0 6px;padding-bottom:8px;border-bottom:2px solid #221f1a;}
+  .rosterHead h1{font-size:26px;line-height:1.05;}
+  .rosterHead .eyebrow{font-family:var(--serif);font-size:12px;color:#736e64;margin-top:3px;}
+  .rhRight{text-align:right;}
+  .printBrand{font-size:9.5px;font-weight:600;color:#0f6b5c;margin-bottom:4px;}
+  .legend{gap:14px;font-size:9.5px;color:#57524a;justify-content:flex-end;}
+  .legend-pill .legend-time{font-size:8.5px;color:#736e64;}
+  /* the ledger: a week-number margin, then seven columns; weeks are ruled lines, not boxes */
+  #weekdayRow,.calweek{display:grid;grid-template-columns:40px repeat(7,1fr);gap:0;}
+  #calGrid{gap:0;}
+  .wkno{font-family:var(--serif);font-size:10px;color:#736e64;padding:5px 0 0;border-top:0.6pt solid #d9d5cc;}
+  #weekdayRow .wkno{border-top:0;}
+  .wd{font-size:9px;color:#736e64;padding:4px 4px 3px;text-align:center;}
+  .day{min-height:var(--rowH,112px);padding:4px;border:0;border-top:0.6pt solid #d9d5cc;border-radius:0;background:#fff;gap:2px;}  /* row height set on beforeprint */
+  .day.weekend{background:#faf9f6;}
+  .day.empty{background:none;border-top:0.6pt solid #d9d5cc;}
+  .day.today .daynum{color:#221f1a;}
+  .daynum{font-size:10px;padding:0 1px;}
+  .badges{gap:0 6px;}
+  .badge-pill{font-size:8px;}
+  .badges.hideprint{display:none;}
+  .chiplist{gap:2px;}
+  .chip{font-size:9px;font-weight:600;line-height:1.25;padding:1px 4px 1px 5px;border-radius:3px;border:0;}
+  :root:not([data-palette^="deep"]) .chip{border-left:2.5px solid currentColor;padding-left:4px;}
   .calweek{break-inside:avoid;page-break-inside:avoid;}
-  .calhead select{display:none;}
-  /* bold dark weekday header pills instead of plain small gray labels */
-  .wd{background:#1e293b;color:#fff;border-radius:6px;padding:6px 0;font-size:11px;letter-spacing:.4px;}
+  #calGrid{border-bottom:2px solid #221f1a;}
+  /* workload, on its own page */
+  #workloadCard{page-break-before:always;break-before:page;margin-top:0;}
+  .workloadHead{border-bottom:2px solid #221f1a;padding-bottom:8px;margin-bottom:8px;}
+  .workloadHead h2{font-family:var(--serif);font-size:22px;font-weight:500;}
+  th,td{padding:5px 8px;border-bottom:0.6pt solid #d9d5cc;font-size:10.5px;}
+  th{font-size:9.5px;color:#736e64;}
+  #coverageSection.hideprint{display:none;}
+  #coverageSection h2{font-size:12px;}
+  #coverageCheck{font-size:10.5px;}
 }
 </style>
 </head>
 <body>
-
+<script>/* theme and page before anything is drawn: the theme saved with the planner state, else the computer's setting */
+(function(){try{var s=JSON.parse(localStorage.getItem("schedulemaster_state")||"{}");if(s&&(s.theme==="dark"||s.theme==="light"))document.documentElement.setAttribute("data-theme",s.theme);if(s&&s.palette&&s.palette!=="classic")document.documentElement.setAttribute("data-palette",s.palette)}catch(e){}
+try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_page");if(!/^(roster|staff|rules|records|email)$/.test(p||""))p="roster";document.documentElement.setAttribute("data-page",p)}catch(e){document.documentElement.setAttribute("data-page","roster")}})();</script>
 <div id="smDialog" role="alertdialog" aria-modal="true" aria-labelledby="smDialogTitle" aria-describedby="smDialogMsg">
   <div class="dlg">
     <div class="dlg-head"><div class="dlg-icon" aria-hidden="true">?</div><h3 id="smDialogTitle"></h3></div>
@@ -274,176 +452,239 @@ table.workload td.ok{color:var(--ok);}
     <div class="dlg-actions"><button type="button" class="dlg-cancel">Cancel</button><button type="button" class="primary dlg-ok">OK</button></div>
   </div>
 </div>
+
 <div id="loginOverlay">
-  <div class="panel" style="width:300px;">
-    <h2 style="margin-top:0;">Schedule Master</h2>
-    <div class="hint" style="margin-top:-6px;">Sign in to continue.</div>
-    <div class="row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:10px;">
-      <input type="text" id="loginUser" placeholder="Username" autocomplete="username">
-      <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
+  <div class="loginBox">
+    <div class="brand"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.75 7.75h14.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="10" width="4" height="2.5" rx=".8" fill="currentColor"/><rect x="10.5" y="13" width="4" height="2.5" rx=".8" fill="currentColor"/></svg>Schedule Master</div>
+    <div class="loginCard">
+      <h1>Sign in</h1>
+      <p>Use your Schedule Master username and password</p>
+      <label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password">
       <button id="loginBtn" class="primary">Log in</button>
+      <div id="loginError" role="alert"></div>
     </div>
-    <div class="hint" id="loginError" style="color:var(--bad);min-height:14px;"></div>
   </div>
 </div>
 
 <div id="appRoot" style="display:none;">
-<div class="top">
-  <h1 style="margin:0">Schedule Master</h1>
-  <select id="selMonth"></select>
-  <input type="number" id="selYear" style="width:70px">
-  <button id="btnAuto" class="primary">Auto Plot</button>
-  <button id="btnClear">Clear month</button>
-  <button id="btnPrint">Print / PDF</button>
-  <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="showCounts"> Show x/y counts in print</label>
-  <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="printCoverage"> Include coverage check in print</label>
+<header class="top">
+<div class="bar">
+  <div class="brand"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.75 7.75h14.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="10" width="4" height="2.5" rx=".8" fill="currentColor"/><rect x="10.5" y="13" width="4" height="2.5" rx=".8" fill="currentColor"/></svg><span>Schedule Master</span></div>
+  <div class="monthNav">
+    <button type="button" class="quiet icon" id="prevMonth" aria-label="Previous month" title="Previous month"><svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+    <select id="selMonth" aria-label="Month"></select>
+    <input type="number" id="selYear" aria-label="Year">
+    <button type="button" class="quiet icon" id="nextMonth" aria-label="Next month" title="Next month"><svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+  </div>
   <div class="spacer"></div>
-  <button id="btnSave" class="primary">Save</button>
-  <button id="btnReload">Reload</button>
-  <button id="btnExport">Export staff.json</button>
-  <button id="btnImport">Import staff.json</button>
-  <input type="file" id="fileImport" accept="application/json" style="display:none">
-  <button id="btnResetAll" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all local data</button>
-  <button id="btnLogout" title="Sign out of Schedule Master">Log out</button>
+  <button id="btnAuto" class="primary">Auto Plot</button>
+  <details class="menu" id="moreMenu">
+    <summary class="btn">More<svg class="i" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+    <div class="menuPanel">
+      <button id="btnPrint" type="button">Print / PDF</button>
+      <div class="menuLabel">On the printout</div>
+      <label class="check"><input type="checkbox" id="showCounts"> Coverage counts on each day</label>
+      <label class="check"><input type="checkbox" id="printCoverage"> Coverage check</label>
+      <hr>
+      <button id="btnClear" type="button">Clear this month</button>
+      <button id="btnResetAll" type="button" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all data in this browser</button>
+    </div>
+  </details>
+  <button type="button" class="quiet icon" id="themeBtn" aria-label="Switch theme" title="Switch theme"></button>
+  <button type="button" class="quiet" id="mailBtn" title="Mail server settings (needs the admin password)"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg><span>Mail server</span></button>
+  <button id="btnLogout" class="quiet" title="Sign out of Schedule Master"><svg class="i" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Log out</span></button>
 </div>
+<nav class="tabs" aria-label="Pages">
+  <button type="button" class="tab" data-nav="roster">Roster</button>
+  <button type="button" class="tab" data-nav="staff">Staff <span class="count" id="navStaff"></span></button>
+  <button type="button" class="tab" data-nav="rules">Shifts &amp; rules</button>
+  <button type="button" class="tab" data-nav="records">Records <span class="count" id="navRecords"></span></button>
+  <button type="button" class="tab" data-nav="email">Email <span class="count" id="navEmail"></span></button>
+</nav>
+</header>
 
-<div class="wrap">
-<div id="leftpanel">
+<main class="main">
+<div class="status" id="status" role="status">Ready.</div>
 
-  <div class="panel">
-    <h2>1 · Staff</h2>
-    <div class="row"><input type="text" id="newStaff" placeholder="Full name" style="flex:1"><button id="addStaff">Add</button></div>
-    <ul class="pill-list" id="staffList"></ul>
-  </div>
-
-  <div class="panel">
-    <h2>3 · Keep apart (optional)</h2>
-    <div id="keepApartUI"></div>
-    <div class="hint">A pair never shares a weekend shift, or a shift flagged Keep Apart above. Sharing another weekday shift is allowed but flagged, and asks for confirmation in Manual Plot.</div>
-  </div>
-
-  <div class="panel">
-    <h2>4 · Leave</h2>
-    <select id="leavePerson"></select>
-    <div class="row"><button id="leaveSelectAll">Select all</button><button id="leaveClearSel">Clear selection</button><button id="leaveAdd" class="primary">Save leave for this month</button></div>
-    <div class="row"><button id="leaveClearPerson">Clear all leave for this person</button></div>
-    <div class="hint">Click days below to select them, then click "Save leave for this month" — it now both adds and removes to match what's selected. "Clear all leave for this person" wipes their leave record across every month.</div>
-    <div class="grid" id="leaveWeekdayRow" style="margin-top:6px;"></div>
-    <div id="leaveCalGrid"></div>
-    <div class="hint" style="margin-top:10px;">All leave currently saved, by person (click × to remove a date):</div>
-    <div id="leaveList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
-  </div>
-
-  <div class="panel">
-    <h2>5 · Plot manually</h2>
-    <div class="row"><select id="mpPerson" style="flex:1"></select></div>
-    <div class="row" id="mpTypeRow"></div>
-    <div class="hint" id="mpSelHint">Click days below to select them, then choose a shift (or Off) and apply.</div>
-    <div class="grid" id="mpWeekdayRow" style="margin-top:6px;"></div>
-    <div id="mpCalGrid"></div>
-    <div class="row" style="margin-top:8px;"><button id="mpSelectAll">Select all</button><button id="mpClearSel">Clear selection</button></div>
-    <button id="mpApply" class="primary" style="margin-top:8px;width:100%;">Apply shift to selected days</button>
-    <div class="status" id="status">Ready.</div>
-  </div>
-
-</div>
-
-<div>
-  <div class="panel" id="shiftTypesPanel">
-    <h2>2 · Shift types &amp; coverage rules</h2>
-    <div class="row">
-      <label>Number of shifts:</label>
-      <select id="shiftCount"><option value="2">2 (Day / Night)</option><option value="3">3 (Morning / Afternoon / Evening)</option></select>
-      <span class="small">Presets for Autofill</span>
-    </div>
-    <div class="shifttype-row" style="font-weight:600;color:var(--muted);">
-      <span></span><span style="text-align:left;">Name</span><span>Start</span><span>End</span><span title="How many people Autofill aims to put on this shift on a weekday">Weekday target</span><span title="The lowest headcount this shift may drop to on a weekday, when marked Flex">Weekday min</span><span title="How many people Autofill aims to put on this shift on a weekend (also the weekend minimum)">Weekend target</span><span title="Lets this shift sag from its Weekday target to its Weekday min on a quiet weekday">Flex</span><span title="Keep-apart pair is never put on this shift together, even on weekdays">Keep Apart</span>
-    </div>
-    <div id="shiftTypesEditor"></div>
-    <div class="row" style="margin-top:8px;">
-      <label>Expected shifts/person</label><input type="number" id="expShifts" min="1" max="31" style="width:55px">
-      <label title="Minimum gap between the end of one shift and the start of a person's next one. Manual Plot blocks a pick that would give less rest than this.">Min rest (hrs)</label><input type="number" id="restHrs" min="0" max="24" style="width:50px" title="Minimum gap between the end of one shift and the start of a person's next one. Manual Plot blocks a pick that would give less rest than this.">
-      <label>Rotation</label>
-      <select id="rotation"><option value="auto">Auto</option><option value="3">3 on / 3 off</option><option value="2">2 on / 2 off</option></select>
-    </div>
-    <div class="row"><label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="requireAll"> Every person needs every shift type</label></div>
-    <div class="row"><label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="weekendLeaveNoQuota"> Weekend leave doesn't reduce expected shifts</label></div>
-    <div class="hint">
-      <strong>Legend:</strong>
-      <ul style="margin:4px 0 0 18px;padding:0;">
-        <li><strong>Weekday target</strong>: how many people Autofill aims to put on this shift on a weekday</li>
-        <li><strong>Weekday min</strong>: the lowest headcount this shift is allowed to drop to on a weekday, but only when it's marked Flex</li>
-        <li><strong>Weekend target</strong>: how many people Autofill aims to put on this shift on a weekend; weekends are always strict, so this number is also the weekend minimum</li>
-        <li><strong>Flex</strong>: lets this shift type sag from its Weekday target down to its Weekday min on a quiet weekday</li>
-        <li><strong>Keep Apart</strong>: a keep-apart pair is never put on this shift together, even on weekdays</li>
-        <li><strong>Min rest (hrs)</strong>: minimum gap required between the end of one shift and the start of the next one for the same person</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="calwrap">
-    <div class="calhead">
-      <h2 style="border:none;padding:0;margin:0" id="calTitle">—</h2>
-      <div class="row" style="margin:0;gap:10px;">
-        <div class="row" id="paletteRow" style="margin:0;gap:4px;" title="Calendar color scheme"></div>
-        <select id="viewSel"></select>
+<!-- ===== Roster ===== -->
+<section class="page" data-page="roster">
+  <div class="rosterHead"><div class="rhLeft"><h1 id="calTitle">—</h1><div class="eyebrow printOnly">Duty roster</div></div><div class="rhRight"><div class="printBrand printOnly">Schedule Master</div><div class="legend" id="legend"></div></div></div>
+  <div class="roster">
+    <div>
+      <div class="calwrap" id="calwrap">
+        <div class="calhead"><label for="viewSel">View</label><select id="viewSel"></select></div>
+        <div class="calScroll"><div class="calInner">
+          <div class="grid" id="weekdayRow"></div>
+          <div id="calGrid"></div>
+        </div></div>
+      </div>
+      <div class="card workloadCard" id="workloadCard">
+        <div class="workloadHead"><h2>Workload<span class="printOnly" id="wlMonth" style="display:inline"></span></h2><span class="small">Shifts against each person's quota</span></div>
+        <div class="tableWrap"><table class="workload" id="workloadTable"></table></div>
+        <div id="coverageSection">
+          <h2>Coverage check</h2>
+          <div id="coverageCheck"></div>
+        </div>
       </div>
     </div>
-    <div class="legend" id="legend"></div>
-    <div class="grid" id="weekdayRow"></div>
-    <div id="calGrid"></div>
+    <aside class="card tools">
+      <div class="toolTabs" role="tablist">
+        <button type="button" role="tab" data-tool="plot" aria-selected="true">Plot</button>
+        <button type="button" role="tab" data-tool="leave" aria-selected="false">Leave</button>
+        <button type="button" role="tab" data-tool="starters" aria-selected="false">Starters</button>
+      </div>
+      <div data-pane="plot">
+        <select id="mpPerson" aria-label="Person to plot"></select>
+        <div class="mptypes" id="mpTypeRow"></div>
+        <div class="grid" id="mpWeekdayRow"></div>
+        <div id="mpCalGrid"></div>
+        <div class="row" style="margin-top:12px"><button id="mpSelectAll" type="button">Select all</button><button id="mpClearSel" type="button" class="quiet">Clear</button></div>
+        <button id="mpApply" class="primary" type="button" style="width:100%">Apply to selected days</button>
+        <p class="hint" id="mpSelHint">Click days, pick a shift (or Off) and apply.</p>
+      </div>
+      <div data-pane="leave" hidden>
+        <select id="leavePerson" aria-label="Person on leave"></select>
+        <div class="grid" id="leaveWeekdayRow"></div>
+        <div id="leaveCalGrid"></div>
+        <div class="row" style="margin-top:12px"><button id="leaveSelectAll" type="button">Select all</button><button id="leaveClearSel" type="button" class="quiet">Clear</button></div>
+        <button id="leaveAdd" class="primary" type="button" style="width:100%">Save leave for this month</button>
+        <p class="hint">Selected days become leave and unselected ones stop being leave. A weekend between two leave days is added too</p>
+        <button id="leaveClearPerson" type="button" class="quiet danger-text" style="margin-top:8px;padding:0 8px">Clear all of this person's leave</button>
+        <div id="leaveList"></div>
+      </div>
+      <div data-pane="starters" hidden>
+        <h2 style="font-size:14px">Starters on day 1 · <span id="csMonthLabel">—</span></h2>
+        <p class="hint" style="margin:4px 0 8px">Up to 4 people who must already be on the shift you pick on the 1st. Auto Plot puts them on it, then runs a normal block. Cleared when you change month</p>
+        <div id="csSlots"></div>
+        <div class="row"><button id="csAddSlot" type="button">Add a starter</button></div>
+        <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
+      </div>
+    </aside>
   </div>
+</section>
 
-  <div class="panel" style="margin-top:14px;" id="validationPage">
-    <h2>Workload &amp; validation</h2>
-    <div style="overflow-x:auto"><table class="workload" id="workloadTable"></table></div>
-    <div id="coverageSection">
-      <h2 style="margin-top:14px;">Coverage check</h2>
-      <div id="coverageCheck" class="small"></div>
+<!-- ===== Staff ===== -->
+<section class="page" data-page="staff">
+  <div class="pageHead"><div><h1>Staff</h1><p>Everyone who can be rostered. Changes reach staff.json when you click Save</p></div></div>
+  <div class="card narrow">
+    <div class="row" style="margin-top:0"><input type="text" id="newStaff" placeholder="Full name" autocomplete="off"><button id="addStaff" class="primary">Add</button></div>
+    <ul class="pill-list" id="staffList"></ul>
+    <div class="btnRow">
+      <button id="btnSave" class="primary">Save</button>
+      <button id="btnReload">Reload</button>
+      <div class="spacer"></div>
+      <button id="btnExport" class="quiet">Export staff.json</button>
+      <button id="btnImport" class="quiet">Import staff.json</button>
+      <input type="file" id="fileImport" accept="application/json" style="display:none">
     </div>
   </div>
+</section>
 
-  <div class="panel" style="margin-top:14px;" id="recordsPanel">
-    <h2>6 · Saved records</h2>
-    <div class="row">
-      <input type="text" id="recordLabel" placeholder="Label for this record (optional)" style="flex:1">
-      <button id="recordSave" class="primary">Save current month as a record</button>
+<!-- ===== Shifts & rules ===== -->
+<section class="page" data-page="rules">
+  <div class="pageHead"><div><h1>Shifts &amp; rules</h1><p>What Auto Plot works to. Changes apply the next time you run it</p></div></div>
+  <div class="card" id="shiftTypesPanel">
+    <div class="row" style="margin:0 0 16px;justify-content:space-between">
+      <div><h2>Shift types</h2><p class="desc" style="margin-bottom:0">How many people each shift needs on weekdays and weekends</p></div>
+      <label class="field" style="display:inline-flex;align-items:center;gap:8px">Shifts per day
+        <select id="shiftCount"><option value="2">2: Day, Night</option><option value="3">3: Morning, Afternoon, Evening</option></select></label>
     </div>
-    <div class="hint">Saves a full snapshot — staff, shift types, keep-apart pairs, leave, this month's shifts, and settings — to <code>records.json</code>, kept separate from your live data. Deleting a record only removes the record; it never touches what's currently plotted.</div>
-    <div class="row" style="margin-top:2px;">
-      <button id="recordsExport">Export records.json</button>
-      <button id="recordsImport">Import records.json</button>
+    <div class="stScroll"><div class="stInner">
+      <div class="stHead"><span></span><span>Name</span><span>Start</span><span>End</span><span class="c" title="How many people Auto Plot aims for on a weekday">Weekday target</span><span class="c" title="The lowest a Flex shift may drop to on a quiet weekday">Weekday min</span><span class="c" title="Weekend headcount. Weekends are strict, so this is also the minimum">Weekend</span><span class="c" title="Lets this shift drop from its weekday target to its weekday minimum">Flex</span><span class="c" title="A keep-apart pair never shares this shift, even on weekdays">Keep apart</span></div>
+      <div id="shiftTypesEditor"></div>
+    </div></div>
+    <div class="settings">
+      <label class="field">Expected shifts per person<input type="number" id="expShifts" min="1" max="31" style="width:64px"></label>
+      <label class="field" title="Minimum gap between the end of one shift and the start of a person's next one">Minimum rest, hours<input type="number" id="restHrs" min="0" max="24" style="width:64px"></label>
+      <label class="field">Rotation<select id="rotation"><option value="auto">Auto</option><option value="3">3 on, 3 off</option><option value="2">2 on, 2 off</option></select></label>
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="requireAll"> Everyone gets every shift type</label>
+      <label class="check"><input type="checkbox" id="weekendLeaveNoQuota"> Weekend leave doesn't reduce expected shifts</label>
+    </div>
+    <details class="explain"><summary>What the columns mean</summary>
+      <ul>
+        <li><b>Weekday target</b>: how many people Auto Plot aims to put on this shift on a weekday</li>
+        <li><b>Weekday min</b>: the lowest headcount allowed on a weekday, only when the shift is Flex</li>
+        <li><b>Weekend</b>: headcount on a weekend. Weekends are strict, so it is also the weekend minimum</li>
+        <li><b>Flex</b>: lets the shift drop from its weekday target to its weekday minimum on a quiet weekday</li>
+        <li><b>Keep apart</b>: a keep-apart pair is never put on this shift together, even on weekdays</li>
+        <li><b>Minimum rest</b>: the gap required between the end of one shift and the start of the next for the same person</li>
+      </ul>
+    </details>
+  </div>
+  <div class="grid2" style="margin-top:16px">
+    <div class="card">
+      <h2>Keep apart</h2><p class="desc">A pair never shares a weekend shift, or a shift marked Keep apart. Sharing another weekday shift is allowed but flagged</p>
+      <div id="keepApartUI"></div>
+    </div>
+    <div class="card">
+      <h2>Calendar colours</h2><p class="desc">Colours the calendar, the printout and the emailed PDF. Saved in this browser</p>
+      <div id="paletteRow" title="Calendar colour scheme"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Records ===== -->
+<section class="page" data-page="records" id="recordsPanel">
+  <div class="pageHead"><div><h1>Records</h1><p>Snapshots of a month, with its staff, shift types, keep-apart pairs, leave, shifts and settings, kept in records.json</p></div></div>
+  <div class="card narrow">
+    <div class="row" style="margin-top:0"><input type="text" id="recordLabel" placeholder="Label, optional" autocomplete="off"><button id="recordSave" class="primary">Save this month</button></div>
+    <div id="recordsList"></div>
+    <div class="btnRow">
+      <button id="recordsExport" class="quiet">Export records.json</button>
+      <button id="recordsImport" class="quiet">Import records.json</button>
       <input type="file" id="recordsFileImport" accept="application/json" style="display:none">
     </div>
-    <div id="recordsList" style="display:flex;flex-direction:column;gap:8px;margin-top:10px;"></div>
   </div>
+</section>
 
-  <div class="panel" style="margin-top:14px;" id="csPanel">
-    <h2>7 · Compulsory starters — <span id="csMonthLabel">—</span></h2>
-    <div class="hint">Up to 4 people who must already be working the shift you pick, on day 1 of the month above — Auto Plot forces them onto it, then lets them run a normal block from there. Applies only to this month; switching month or year clears these slots.</div>
-    <div id="csSlots"></div>
-    <div class="row"><button id="csAddSlot">Add slot</button></div>
-    <div class="hint" id="csWarnings" style="color:var(--warn);"></div>
+<!-- ===== Email ===== -->
+<section class="page" data-page="email" id="emailPanel">
+  <div class="pageHead"><div><h1>Email</h1><p>Each person gets their own dates and shift times for <span id="emailMonthLabel">—</span>, with a PDF and a calendar file. Nobody sees anyone else's</p></div>
+    <button id="emailSend" class="primary">Send shifts to everyone</button></div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Addresses</h2><p class="desc">Off keeps the address but skips the person when sending</p>
+      <div id="emailList"></div>
+      <div id="emailSendResult"></div>
+    </div>
+    <div class="card">
+      <h2>Add or change</h2><p class="desc">Saved in emails.json on the server</p>
+      <select id="emailPerson" aria-label="Person" style="width:100%"></select>
+      <div class="row"><input type="email" id="emailAddress" placeholder="name@example.com" aria-label="Email address"></div>
+      <div class="row"><button id="emailSave" class="primary">Save</button><button id="emailDelete" class="quiet">Delete</button></div>
+    </div>
   </div>
+</section>
 
-  <div class="panel" style="margin-top:14px;" id="emailPanel">
-    <h2>8 · Email</h2>
-    <div class="row">
-      <select id="emailPerson" style="flex:1"></select>
-      <input type="email" id="emailAddress" placeholder="name@example.com" style="flex:1">
-      <button id="emailSave" class="primary">Save</button>
-      <button id="emailDelete">Delete</button>
+<!-- ===== Mail server (behind the admin password) ===== -->
+<div id="mailView" hidden>
+  <form class="card narrow" id="mxForm" autocomplete="off">
+    <div class="mailHead"><h2 style="font-family:var(--serif);font-size:22px;font-weight:500">Mail server</h2><button type="button" id="mxBack">Back to planner</button></div>
+    <p class="desc" style="margin-bottom:0">The relay shifts are sent through. Saved in mail.json on the server</p>
+    <div id="mxState" class="mailMsg" hidden></div>
+    <div class="mailGrid">
+      <label class="wide">SMTP server<input id="mxHost" placeholder="smtp.example.com" spellcheck="false" maxlength="253"></label>
+      <label>Security<select id="mxSecurity"><option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">None</option></select></label>
+      <label>Port<input id="mxPort" type="number" min="1" max="65535"></label>
+      <label>Username<input id="mxUser" placeholder="Empty if no login is needed" spellcheck="false" maxlength="254" autocomplete="off"></label>
+      <label>Password<input id="mxPass" type="password" maxlength="1000" autocomplete="new-password"></label>
+      <label>From address<input id="mxFrom" placeholder="rota@example.com" spellcheck="false" maxlength="254"></label>
+      <label>From name<input id="mxFromName" placeholder="Schedule Master" maxlength="100"></label>
     </div>
-    <div class="hint">Saves each person's address to <code>emails.json</code> on the server, kept separate from staff.json and records.json. Only available when running via <code>ScheduleMaster.py</code> — addresses can't be stored or sent from a browser-only session.</div>
-    <div id="emailList" style="display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:13px;"></div>
-    <div class="row" style="margin-top:12px;">
-      <button id="emailSend" class="primary" style="font-size:15px;padding:10px 22px;">Send this month's shifts to everyone</button>
+    <label class="check" id="mxClearRow" hidden><input type="checkbox" id="mxClear"> Remove the saved password</label>
+    <div class="row" style="margin-top:16px"><button class="primary" type="submit" id="mxSave">Save</button></div>
+    <div id="mxMsg" class="mailMsg" hidden></div>
+    <div class="mailTest">
+      <div class="small">Send a test email with the saved settings</div>
+      <div class="row"><input id="mxTestTo" type="email" placeholder="you@example.com" spellcheck="false" aria-label="Test address" style="flex:1"><button type="button" id="mxTestBtn">Send test</button></div>
+      <div id="mxTestMsg" class="mailMsg" hidden></div>
     </div>
-    <div class="hint">Emails each person their own dates and shift times for <span id="emailMonthLabel">—</span> — nobody sees anyone else's schedule. Each email includes a PDF and a calendar (.ics) file, colored to match whichever palette swatch is selected above right now. Sent through the mail relay set in <code>mail.json</code> on the server (without it: a local Postfix on the same machine, no login required).</div>
-    <div id="emailSendResult" class="hint"></div>
-  </div>
+  </form>
 </div>
-</div>
+</main>
 </div>
 
 <script>
@@ -555,6 +796,7 @@ $("loginBtn").addEventListener("click",doLogin);
 $("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
 $("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
 $("btnLogout").addEventListener("click", async ()=>{
+  document.documentElement.classList.remove("mailMode"); $("mailView").hidden=true;
   try{ await _fetch("api/logout",{method:"POST"}); }catch(e){}
   AUTHED=false;
   showLogin("");
@@ -596,9 +838,10 @@ function renderPaletteSwatches(){
     btn.type="button";
     btn.title=p.name;
     btn.className="swatch"+((S.palette||"classic")===p.id?" active":"");
-    btn.style.background=`linear-gradient(90deg, ${p.inks[0]} 0 33%, ${p.inks[1]} 33% 66%, ${p.inks[2]} 66% 100%)`;
+    btn.setAttribute("aria-pressed",String((S.palette||"classic")===p.id));
+    btn.innerHTML=`<span class="bars"><i style="background:${p.inks[0]}"></i><i style="background:${p.inks[1]}"></i><i style="background:${p.inks[2]}"></i></span>${esc(p.name)}`;
     btn.addEventListener("click",()=>{
-      S.palette=p.id; save(); renderPaletteSwatches();
+      S.palette=p.id; save(); renderPaletteSwatches(); setStatus(`Calendar colours: ${p.name}.`);
     });
     host.appendChild(btn);
   });
@@ -638,6 +881,12 @@ $("btnResetAll").addEventListener("click",async()=>{
 });
 
 // ---------- date helpers (all UTC) ----------
+function isoWeek(y,m,d){   // ISO week number of a day (may fall outside the month: Date rolls it over)
+  const t=new Date(Date.UTC(y,m,d)); t.setUTCDate(t.getUTCDate()+3-((t.getUTCDay()+6)%7));
+  const jan4=new Date(Date.UTC(t.getUTCFullYear(),0,4));
+  return 1+Math.round(((t-jan4)/86400000-3+((jan4.getUTCDay()+6)%7))/7);
+}
+function todayStr(){ const t=new Date(); return ymd(t.getFullYear(),t.getMonth(),t.getDate()); }
 function ymd(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 function daysInMonth(y,m){ return new Date(Date.UTC(y,m+1,0)).getUTCDate(); }
 function weekdayOf(y,m,d){ return new Date(Date.UTC(y,m,d)).getUTCDay(); } // 0=Sun
@@ -749,7 +998,7 @@ function renderStaff(){
   const ul=$("staffList"); ul.innerHTML="";
   S.staff.forEach(name=>{
     const li=document.createElement("li"); li.className="pill";
-    li.innerHTML=`${esc(name)}<button title="Remove">✕</button>`;
+    li.innerHTML=`<span>${esc(name)}</span><button type="button" title="Remove ${esc(name)}">Remove</button>`;
     li.querySelector("button").addEventListener("click",async()=>{
       const leaveDays=(S.leave[name]||[]).length;
       const shiftCount=Object.values(S.shifts).filter(day=>day && day[name]).length;
@@ -835,7 +1084,7 @@ function renderLeaveGrid(){
     let tag="";
     if(selected){
       tag=`<span class="mptag" style="background:var(--leave-bg);color:var(--leave)">Leave</span>`;
-    } else if(existing){
+    } else if(existing && shiftById(existing)){  // a shift type removed since (e.g. 2 -> 3 shifts) has no colour or name
       const idx=S.shiftTypes.findIndex(t=>t.id===existing);
       const t=shiftById(existing);
       const [ink,bg]=CHIP_COLORS[idx%3];
@@ -985,7 +1234,7 @@ function renderManualCalendar(){
     if(onLeave){
       cell.title=`${person} is on leave — can't plot a shift.`;
       tag=`<span class="mptag" style="background:var(--leave-bg);color:var(--leave)">Leave</span>`;
-    } else if(existing){
+    } else if(existing && shiftById(existing)){  // a shift type removed since (e.g. 2 -> 3 shifts) has no colour or name
       const idx=S.shiftTypes.findIndex(t=>t.id===existing);
       const t=shiftById(existing);
       const [ink,bg]=CHIP_COLORS[idx%3];
@@ -1003,7 +1252,7 @@ function renderManualCalendar(){
   host.appendChild(grid);
   $("mpSelHint").textContent = mpSelected.size
     ? `${mpSelected.size} day${mpSelected.size===1?"":"s"} selected.`
-    : "Click days below to select them, then choose a shift (or Off) and apply.";
+    : "Click days, pick a shift (or Off) and apply.";
 }
 $("mpPerson").addEventListener("change",()=>{ mpSelected.clear(); renderManualCalendar(); });
 $("mpSelectAll").addEventListener("click",()=>{
@@ -1103,63 +1352,47 @@ $("btnClear").addEventListener("click",async()=>{
   save(); renderAll();
 });
 $("btnPrint").addEventListener("click",()=>window.print());
-// Fit the calendar to exactly one printed page, in both directions:
-// - too tall/wide: shrink with `zoom` (unlike transform:scale, zoom actually reflows layout, so the browser's
-//   own pagination sees the calendar at its true, shrunk size rather than its full-size box)
-// - shorter than a page: stretch the week rows to fill the leftover space instead of leaving it blank
+// Fit the calendar to one printed A4 landscape page. The row height comes from the page height and the
+// number of weeks (so 4, 5 and 6-week months all fill the page), not from measuring the screen layout,
+// which is still at screen width when beforeprint fires. Only a day holding more shifts than a row can
+// show makes it shrink (never below 55%).
 window.addEventListener("beforeprint",()=>{
-  const cw=$("calwrap")||document.querySelector(".calwrap");
-  const grid=$("calGrid");
-  if(!cw) return;
-  // reset any sizing left over from a previous print so the measurements below start from natural size
-  cw.style.zoom="1";
-  if(grid){ grid.style.height=""; grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex=""; }); }
-  const naturalH=cw.scrollHeight, naturalW=cw.scrollWidth;
-  const targetH=720, targetW=1030; // approx usable px for a landscape page at the @page margin set above
-  // shrink (never grow) just enough to bring the tighter dimension within the page - zoom reflows
-  // layout, so both axes scale together and stay in proportion
-  const fit=Math.min(1, targetH/naturalH, targetW/naturalW);
-  cw.style.zoom=Math.max(fit,0.55).toFixed(3); // don't shrink past readable - an unusually large roster may still spill to a 2nd page
-  // whichever axis WASN'T the tight one (usually height, since a calendar is much wider than it is
-  // tall) still has room left below the grid after that shrink - stretch the week rows to use it
-  // instead of leaving the bottom of the page blank. Zoom already reflowed, so these measurements
-  // and the height we set below are both real on-page px, comparable directly to targetH.
-  if(grid){
-    const cwTop=cw.getBoundingClientRect().top, gridTop=grid.getBoundingClientRect().top;
-    const usedAbove=gridTop-cwTop; // header + legend + weekday row
-    const rawLeftover=targetH-usedAbove-grid.scrollHeight;
-    // cap the stretch at a fraction of the grid's own natural height, so a big shrink elsewhere
-    // (e.g. a wide roster with only 2 shift types) can't balloon every row with empty space - any
-    // leftover past the cap is just left blank below the calendar instead
-    const leftover=Math.min(rawLeftover, grid.scrollHeight*0.45);
-    if(leftover>2){
-      grid.style.height=(grid.scrollHeight+leftover)+"px";
-      grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex="1"; });
-    }
-  }
+  const cw=$("calwrap"), grid=$("calGrid");
+  if(!cw||!grid) return;
+  const weeks=grid.querySelectorAll(".calweek").length||5;
+  let most=0; grid.querySelectorAll(".day").forEach(d=>{ most=Math.max(most,d.querySelectorAll(".chip").length); });
+  const avail=636;                                   // px under the title and weekday names on the page
+  const rowH=(avail-(weeks-1)*4)/weeks;
+  const need=24+(S.showCounts?12:0)+most*14;         // day number, counts, then one line per shift
+  const fit=Math.max(0.55,Math.min(1,rowH/need));
+  cw.style.zoom=fit<1?fit.toFixed(3):"";
+  grid.style.setProperty("--rowH",Math.floor(rowH/fit)+"px");
 });
 window.addEventListener("afterprint",()=>{
-  const cw=$("calwrap")||document.querySelector(".calwrap");
-  const grid=$("calGrid");
+  const cw=$("calwrap"), grid=$("calGrid");
   if(cw) cw.style.zoom="";
-  if(grid){ grid.style.height=""; grid.querySelectorAll(".calweek").forEach(w=>{ w.style.flex=""; }); }
+  if(grid) grid.style.removeProperty("--rowH");
 });
 
 function renderCalendar(){
   $("calTitle").textContent=`${MONTHS[S.month]} ${S.year}`;
+  $("wlMonth").textContent=` · ${MONTHS[S.month]} ${S.year}`;   // shown on the printout only
   $("showCounts").checked=S.showCounts;
-  const wd=$("weekdayRow"); wd.innerHTML=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="wd">${w}</div>`).join("");
+  const wd=$("weekdayRow"); wd.innerHTML=`<div class="wkno"></div>`+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=>`<div class="wd">${w}</div>`).join("");
   const grid=$("calGrid"); grid.innerHTML="";
   const firstWd=weekdayOf(S.year,S.month,1);
   const n=daysInMonth(S.year,S.month);
-  let week=null;
-  const startWeek=()=>{ week=document.createElement("div"); week.className="calweek"; grid.appendChild(week); };
-  const addCell=(cell)=>{ if(!week||week.children.length>=7) startWeek(); week.appendChild(cell); };
+  let week=null, row=-1;
+  // each week starts with its ISO week number (Monday to Sunday), shown on the printout only, like a rota ledger
+  const startWeek=()=>{ row++; week=document.createElement("div"); week.className="calweek";
+    const wk=document.createElement("div"); wk.className="wkno"; wk.textContent="Wk "+isoWeek(S.year,S.month,row*7+2-firstWd); week.appendChild(wk);
+    grid.appendChild(week); };
+  const addCell=(cell)=>{ if(!week||week.querySelectorAll(".day").length>=7) startWeek(); week.appendChild(cell); };
   for(let i=0;i<firstWd;i++){ const blank=document.createElement("div"); blank.className="day empty"; addCell(blank); }
   for(let d=1; d<=n; d++){
     const ds=ymd(S.year,S.month,d);
     const weekend=isWeekend(S.year,S.month,d);
-    const cell=document.createElement("div"); cell.className="day"+(weekend?" weekend":"");
+    const cell=document.createElement("div"); cell.className="day"+(weekend?" weekend":"")+(ds===todayStr()?" today":"");
     const dayShifts=S.shifts[ds]||{};
     // coverage badges (built first so they can sit next to the day number, not float over the name chips)
     const target=t=>weekend?t.weTarget:t.wdTarget;
@@ -1202,7 +1435,7 @@ function renderCalendar(){
     addCell(cell);
   }
   // pad the final week out to 7 cells so its grid columns still line up
-  if(week){ while(week.children.length<7){ const blank=document.createElement("div"); blank.className="day empty"; week.appendChild(blank); } }
+  if(week){ while(week.querySelectorAll(".day").length<7){ const blank=document.createElement("div"); blank.className="day empty"; week.appendChild(blank); } }
 }
 
 // ---------- validation & coverage ----------
@@ -1296,7 +1529,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
+  renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -1508,6 +1741,7 @@ function recordSummary(rec){
   return `${d.staff.length} staff · ${d.shiftTypes.length} shift type${d.shiftTypes.length===1?"":"s"} · ${placed} shift${placed===1?"":"s"} placed over ${days} day${days===1?"":"s"}`;
 }
 function renderRecords(){
+  renderNav();
   const host=$("recordsList"); host.innerHTML="";
   if(!RECORDS.length){ host.innerHTML=`<div class="small">No saved records yet.</div>`; return; }
   [...RECORDS].sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).forEach(rec=>{
@@ -1604,7 +1838,7 @@ function renderCompulsoryStarters(){
     const row=document.createElement("div"); row.className="cs-slot";
     const personOpts=`<option value="">— person —</option>`+S.staff.map(n=>`<option value="${esc(n)}" ${cs.person===n?"selected":""}>${esc(n)}</option>`).join("");
     const typeOpts=`<option value="">— shift —</option>`+S.shiftTypes.map(t=>`<option value="${esc(t.id)}" ${cs.shiftType===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
-    row.innerHTML=`<select data-i="${i}" data-f="person">${personOpts}</select><select data-i="${i}" data-f="shiftType">${typeOpts}</select><button data-i="${i}" title="Remove slot">✕</button>`;
+    row.innerHTML=`<select data-i="${i}" data-f="person">${personOpts}</select><select data-i="${i}" data-f="shiftType">${typeOpts}</select><button data-i="${i}" class="quiet danger-text" title="Remove this starter">Remove</button>`;
     row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
       list[i][sel.dataset.f]=sel.value||null; save(); renderCompulsoryStarters();
     }));
@@ -2038,6 +2272,7 @@ async function persistEmails(){
 }
 
 function renderEmailPanel(){
+  renderNav();
   $("emailMonthLabel").textContent=`${MONTHS[S.month]} ${S.year}`;
   const sel=$("emailPerson");
   const prev=sel.value;
@@ -2057,7 +2292,7 @@ function renderEmailPanel(){
       const onFile=S.staff.includes(name);
       const on=!PAUSED.includes(name);
       row.innerHTML=`<button type="button" class="mail-toggle" aria-pressed="${on}" title="${on?"On: included when you send to everyone. Click to turn off for this person.":"Off: skipped when you send to everyone (address is kept). Click to turn back on."}">${on?"On":"Off"}</button>`+
-        `<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}${on?"":"opacity:.55;"}">${esc(name)}</span><span class="small" style="flex:2;${on?"":"opacity:.55;"}">${esc(EMAILS[name])}</span><button type="button" data-name="${esc(name)}" title="Remove this address">✕</button>`;
+        `<span style="flex:1;${onFile?"":"color:var(--muted);text-decoration:line-through;"}${on?"":"opacity:.55;"}">${esc(name)}</span><span class="small" style="flex:2;${on?"":"opacity:.55;"}">${esc(EMAILS[name])}</span><button type="button" data-name="${esc(name)}" title="Remove this address">Remove</button>`;
       row.querySelector("button.mail-toggle").addEventListener("click", async ()=>{
         PAUSED=on ? [...PAUSED, name] : PAUSED.filter(n=>n!==name);
         await persistEmails(); renderEmailPanel();
@@ -2147,9 +2382,140 @@ $("emailSend").addEventListener("click", async ()=>{
     $("emailSendResult").textContent="Send failed: "+e.message;
     setStatus("Could not send emails: "+e.message);
   } finally {
-    $("emailSend").disabled=!emailsServerMode; $("emailSend").textContent="Send this month's shifts to everyone";
+    $("emailSend").disabled=!emailsServerMode; $("emailSend").textContent="Send shifts to everyone";
   }
 });
+
+// ---------- pages (tabs), Plot / Leave / Starters, month arrows, More menu, theme ----------
+const PAGES=["roster","staff","rules","records","email"];
+function showPage(p){
+  if(!PAGES.includes(p)) p="roster";
+  document.documentElement.setAttribute("data-page",p);
+  document.querySelectorAll(".tab").forEach(b=>{ if(b.dataset.nav===p) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
+  try{ localStorage.setItem("schedulemaster_page",p); }catch(e){}
+  if(location.hash!=="#"+p) history.replaceState(null,"","#"+p);
+}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{ showPage(b.dataset.nav); window.scrollTo(0,0); }));
+window.addEventListener("hashchange",()=>{ const p=location.hash.slice(1); if(PAGES.includes(p)) showPage(p); });
+showPage(document.documentElement.getAttribute("data-page"));
+function showTool(t){
+  document.querySelectorAll(".toolTabs [data-tool]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tool===t)));
+  document.querySelectorAll(".tools [data-pane]").forEach(p=>{ p.hidden=p.dataset.pane!==t; });
+}
+document.querySelectorAll(".toolTabs [data-tool]").forEach(b=>b.addEventListener("click",()=>showTool(b.dataset.tool)));
+function stepMonth(n){
+  let m=S.month+n, y=S.year;
+  if(m<0){ m=11; y--; } else if(m>11){ m=0; y++; }
+  S.month=m; S.year=y; mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll();
+}
+$("prevMonth").addEventListener("click",()=>stepMonth(-1));
+$("nextMonth").addEventListener("click",()=>stepMonth(1));
+const moreMenu=$("moreMenu");
+moreMenu.querySelectorAll(".menuPanel button").forEach(b=>b.addEventListener("click",()=>{ moreMenu.open=false; }));
+document.addEventListener("click",e=>{ if(moreMenu.open && !moreMenu.contains(e.target)) moreMenu.open=false; });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape" && moreMenu.open){ moreMenu.open=false; moreMenu.querySelector("summary").focus(); } });
+function renderNav(){
+  const set=(id,t)=>{ const e=$(id); if(e) e.textContent=t; };
+  set("navStaff",S.staff.length?String(S.staff.length):"");
+  set("navRecords",typeof RECORDS!=="undefined"&&RECORDS.length?String(RECORDS.length):"");
+  const n=typeof EMAILS!=="undefined"?Object.keys(EMAILS).length:0;
+  set("navEmail",n?String(n):"");
+}
+const ICON_SUN='<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+const ICON_MOON='<svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+function isDark(){ return S.theme? S.theme==="dark" : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches); }
+function applyTheme(){
+  if(S.theme==="dark"||S.theme==="light") document.documentElement.setAttribute("data-theme",S.theme);
+  else document.documentElement.removeAttribute("data-theme");
+  const b=$("themeBtn"), dark=isDark();
+  b.innerHTML=dark?ICON_SUN:ICON_MOON; b.title=dark?"Switch to light mode":"Switch to dark mode"; b.setAttribute("aria-label",b.title);
+}
+$("themeBtn").addEventListener("click",()=>{ S.theme=isDark()?"light":"dark"; save(); applyTheme(); });
+if(window.matchMedia){ const mq=matchMedia("(prefers-color-scheme: dark)"), follow=()=>{ if(!S.theme) applyTheme(); };
+  if(mq.addEventListener) mq.addEventListener("change",follow); else if(mq.addListener) mq.addListener(follow); }
+applyTheme();
+
+// ---------- Mail server page (header button, admin password) ----------
+// The server checks the admin password (same lockout as sign-in) and keeps the page open for this session
+// for 10 minutes after the password or the last save; Back to planner locks it again. The saved relay
+// password is never sent back to the page.
+function mxMsg(id,text,cls){ const e=$(id); e.textContent=text||""; e.className="mailMsg"+(cls?" "+cls:""); e.hidden=!text; }
+async function mxCall(body){
+  const r=await fetch("api/mail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  let b={}; try{ b=await r.json(); }catch(e){}
+  if(!r.ok){ const err=new Error(b.error||("server responded "+r.status)); err.locked=!!b.locked; throw err; }
+  return b;
+}
+function mxAskPassword(){ return new Promise(resolve=>{
+  const back=document.createElement("div"), prev=document.activeElement; back.className="pwBack";
+  back.innerHTML='<form class="dlg" role="dialog" aria-modal="true" aria-labelledby="mxPwT"><h3 id="mxPwT">Mail server</h3>'
+    +'<p class="dlg-msg" style="margin-top:8px">Enter the admin password to view and change the mail relay settings.</p>'
+    +'<input id="mxPw" type="password" autocomplete="current-password" aria-label="Admin password">'
+    +'<div class="pwErr" hidden></div>'
+    +'<div class="dlg-actions"><button type="button" class="pwNo">Cancel</button><button type="submit" class="primary pwGo">Unlock</button></div></form>';
+  const form=back.firstChild, pw=back.querySelector("#mxPw"), err=back.querySelector(".pwErr"), go=back.querySelector(".pwGo");
+  const onKey=e=>{ if(e.key==="Escape"){ e.preventDefault(); close(null); } };
+  function close(v){ document.removeEventListener("keydown",onKey,true); back.remove(); if(!v && prev && prev.focus) prev.focus(); resolve(v); }
+  back.querySelector(".pwNo").onclick=()=>close(null);
+  back.addEventListener("mousedown",e=>{ if(e.target===back) close(null); });
+  document.addEventListener("keydown",onKey,true);
+  form.addEventListener("submit",async e=>{
+    e.preventDefault(); if(!pw.value) return pw.focus();
+    go.disabled=true; go.textContent="Checking…"; err.hidden=true;
+    try{ close(await mxCall({action:"unlock",password:pw.value})); return; }
+    catch(x){ err.textContent=x.message==="Failed to fetch"?"Could not reach the server.":x.message; err.hidden=false; }
+    go.disabled=false; go.textContent="Unlock"; pw.select();
+  });
+  document.body.appendChild(back); pw.focus();
+}); }
+function mxFill(b){
+  const m=b.mail||{};
+  $("mxHost").value=m.host||""; $("mxPort").value=m.port||""; $("mxSecurity").value=m.security||"none";
+  $("mxUser").value=m.username||""; $("mxFrom").value=m.from_addr||""; $("mxFromName").value=m.from_name||"";
+  $("mxPass").value=""; $("mxPass").placeholder=m.has_password?"Saved, leave blank to keep":"";
+  $("mxClear").checked=false; $("mxClearRow").hidden=!m.has_password;
+  if(b.problem) mxMsg("mxState",b.problem,"bad");
+  else mxMsg("mxState",`Shifts are sent from ${m.from_addr} through ${m.host}:${m.port}`+(m.security==="none"?"":` (${m.security==="ssl"?"SSL/TLS":"STARTTLS"})`)+".","ok");
+}
+function mxPortFor(){
+  const p=$("mxPort"), want={starttls:587,ssl:465,none:25}[$("mxSecurity").value];
+  if(!p.value||["25","465","587"].includes(p.value)) p.value=want;   // a port someone typed themselves is kept
+}
+async function mailOpen(){
+  if(document.documentElement.classList.contains("mailMode")) return;
+  const b=await mxAskPassword(); if(!b) return;
+  mxFill(b); mxMsg("mxMsg",""); mxMsg("mxTestMsg","");
+  document.documentElement.classList.add("mailMode"); $("mailView").hidden=false; window.scrollTo(0,0); $("mxHost").focus();
+}
+function mailClose(){
+  $("mailView").hidden=true; document.documentElement.classList.remove("mailMode"); $("mxPass").value="";
+  mxCall({action:"lock"}).catch(()=>{});
+}
+function mxLockedOut(x){ if(!x.locked) return false; mailClose(); askConfirm({title:"Mail server",message:x.message,confirmText:"OK",cancelText:null}); return true; }
+async function mxSave(){
+  const btn=$("mxSave"); btn.disabled=true; mxMsg("mxMsg","Saving…");
+  try{
+    const b=await mxCall({action:"save",mail:{host:$("mxHost").value,port:$("mxPort").value,security:$("mxSecurity").value,
+      username:$("mxUser").value,password:$("mxPass").value,clear_password:$("mxClear").checked,
+      from_addr:$("mxFrom").value,from_name:$("mxFromName").value}});
+    mxFill(b); mxMsg("mxMsg","Saved. The next send uses these settings.","ok");
+  }catch(x){ if(!mxLockedOut(x)) mxMsg("mxMsg","Not saved: "+(x.message==="Failed to fetch"?"could not reach the server.":x.message),"bad"); }
+  btn.disabled=false;
+}
+async function mxTest(){
+  const to=$("mxTestTo").value.trim(), btn=$("mxTestBtn");
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return mxMsg("mxTestMsg","Enter a valid address to send the test to.","bad");
+  btn.disabled=true; mxMsg("mxTestMsg","Sending…");
+  try{ await mxCall({action:"test",to}); mxMsg("mxTestMsg",`Test email sent to ${to}. Check that inbox, and its spam folder.`,"ok"); }
+  catch(x){ if(!mxLockedOut(x)) mxMsg("mxTestMsg",x.message==="Failed to fetch"?"Could not reach the server.":x.message,"bad"); }
+  btn.disabled=false;
+}
+$("mailBtn").addEventListener("click",mailOpen);
+$("mxBack").addEventListener("click",mailClose);
+$("mxForm").addEventListener("submit",e=>{ e.preventDefault(); mxSave(); });
+$("mxSecurity").addEventListener("change",mxPortFor);
+$("mxTestBtn").addEventListener("click",mxTest);
+$("mxTestTo").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); mxTest(); } });
 
 boot();
 })();

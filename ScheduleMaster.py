@@ -36,6 +36,10 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
                         good for 30 days and returns {"ok": true}; on failure, 401. An address gets
                         locked out for 15 minutes after 5 wrong attempts in a row (429 while locked).
   POST /api/logout   -> clears the current session cookie.
+  POST /api/mail     -> the Mail server page (signed in, plus the admin password). Body {"action": ...}:
+                        "unlock" {"password"} checks the password (same lockout as sign-in) and opens the
+                        page for this session for 10 minutes; "save" {"mail": {...}} writes mail.json;
+                        "test" {"to"} sends one test email; "lock" closes the page again.
 
   Every other /api/* route above requires a valid session cookie (401 if missing/expired) — the
   static page itself (ScheduleMaster.html, this file's assets) is not gated, so the browser can
@@ -46,6 +50,7 @@ Run this file (python3 ScheduleMaster.py), then a browser tab opens
 automatically at ScheduleMaster.html. Default login is admin / admin — see login.json.
 """
 import calendar
+import hashlib
 import hmac
 import http.cookies
 import http.server
@@ -104,6 +109,7 @@ SMTP_FROM_ADDR = "scheduler@localhost"
 SMTP_USERNAME = None
 SMTP_PASSWORD = None
 SMTP_USE_TLS = False
+SMTP_SECURITY = None   # "none", "starttls" or "ssl"; None = follow SMTP_USE_TLS (True -> "starttls")
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -278,13 +284,13 @@ def read_mail_settings():
     Raises ValueError (with a readable reason) if mail.json exists but can't be used - the caller then
     sends nothing rather than quietly falling back to a different relay."""
     cfg = {"host": SMTP_HOST, "port": SMTP_PORT, "from_name": SMTP_FROM_NAME, "from_addr": SMTP_FROM_ADDR,
-           "username": SMTP_USERNAME, "password": SMTP_PASSWORD, "use_tls": SMTP_USE_TLS}
+           "username": SMTP_USERNAME, "password": SMTP_PASSWORD, "use_tls": SMTP_USE_TLS, "security": SMTP_SECURITY}
     if not os.path.exists(MAIL_FILE):
-        return cfg
+        return _finish_security(cfg)
     with open(MAIL_FILE, "r", encoding="utf-8") as f:
         raw = f.read().strip()
     if not raw:
-        return cfg
+        return _finish_security(cfg)
     data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it
     if not isinstance(data, dict):
         raise ValueError('mail.json must look like {"host": "10.0.0.25", "port": 25, "from_addr": "rota@example.com"}')
@@ -302,6 +308,9 @@ def read_mail_settings():
         elif key == "use_tls":
             if not isinstance(val, bool):
                 raise ValueError('"use_tls" must be true or false (no quotes)')
+        elif key == "security":
+            if val is not None and val not in ("none", "starttls", "ssl"):
+                raise ValueError('"security" must be "none", "starttls" or "ssl"')
         elif key in ("username", "password"):
             if val is not None and not isinstance(val, str):
                 raise ValueError(f'"{key}" must be text in quotes, or null')
@@ -313,20 +322,170 @@ def read_mail_settings():
                 raise ValueError(f'"{key}" must be on one line')
             val = val.strip()
         cfg[key] = val
+    return _finish_security(cfg)
+
+
+def _finish_security(cfg):
+    """"security" wins when set; otherwise the older "use_tls" decides (true = STARTTLS, false = none)."""
+    if not cfg.get("security"):
+        cfg["security"] = "starttls" if cfg.get("use_tls") else "none"
+    cfg["use_tls"] = cfg["security"] == "starttls"
     return cfg
 
 
+MAIL_FORM_KEYS = ("host", "port", "security", "username", "from_addr", "from_name")
+FROM_RE = re.compile(r"^[^\s@<>\",;:()\[\]\\]+@[^\s@<>\",;:()\[\]\\]+$")
+
+
+def mail_form(cfg):
+    """What the Mail server page shows: never the password, only whether one is saved."""
+    out = {k: cfg.get(k) for k in MAIL_FORM_KEYS}
+    out["username"] = out["username"] or ""
+    out["has_password"] = bool(cfg.get("password"))
+    return out
+
+
+def clean_mail_form(data):
+    """Check what the Mail server page sent. Returns only the keys it may change in mail.json."""
+    if not isinstance(data, dict):
+        raise ValueError("Bad mail settings.")
+
+    def text(key, label, limit, required=False):
+        v = data.get(key, "")
+        if v is None:
+            v = ""
+        if not isinstance(v, str):
+            raise ValueError(f"Bad value for {label}.")
+        v = v.strip()
+        if "\r" in v or "\n" in v or len(v) > limit:
+            raise ValueError(f"{label} is too long or has line breaks.")
+        if required and not v:
+            raise ValueError(f"{label} is empty.")
+        return v
+
+    out = {"host": text("host", "SMTP server", 253, True), "from_addr": text("from_addr", "From address", 254, True),
+           "from_name": text("from_name", "From name", 100)}
+    user = text("username", "Username", 254)
+    out["username"] = user or None
+    try:
+        out["port"] = int(data.get("port"))
+    except (TypeError, ValueError):
+        raise ValueError("Port must be a number.")
+    if not 1 <= out["port"] <= 65535:
+        raise ValueError("Port must be between 1 and 65535.")
+    sec = str(data.get("security", "")).lower()
+    if sec not in ("none", "starttls", "ssl"):
+        raise ValueError("Security must be None, STARTTLS or SSL/TLS.")
+    out["security"] = sec
+    out["use_tls"] = sec == "starttls"     # kept in step so the file still reads the same in older versions
+    if not FROM_RE.match(out["from_addr"]):
+        raise ValueError(f'"{out["from_addr"]}" is not a valid From address.')
+    pw = data.get("password", "")
+    if not isinstance(pw, str) or len(pw) > 1000 or "\r" in pw or "\n" in pw:
+        raise ValueError("Bad password.")
+    if pw:                                  # empty = keep the saved password
+        out["password"] = pw
+    elif data.get("clear_password") is True:
+        out["password"] = None
+    return out
+
+
+def write_mail_settings(changes):
+    """Apply the page's changes to mail.json. Keys it doesn't show (notes starting with _) are kept."""
+    data = {}
+    if os.path.exists(MAIL_FILE):
+        try:
+            with open(MAIL_FILE, "r", encoding="utf-8") as f:
+                raw = f.read().strip()
+            loaded = json.loads(raw) if raw else {}
+            if isinstance(loaded, dict):
+                data = loaded
+        except (ValueError, OSError):
+            data = {}                       # an unreadable file is replaced
+    data.update(changes)
+    tmp = MAIL_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    try:
+        os.chmod(tmp, 0o600)                # may hold the relay password
+    except OSError:
+        pass
+    os.replace(tmp, MAIL_FILE)
+
+
+PBKDF2_ITERS = 200000
+LOGIN_HELP = ('To change the password, add a line "password": "your new password" (comma after the line above '
+              'it) and save. It is turned into a hash on the next sign-in, and everyone is signed out.')
+
+
+def hash_password(pw, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, PBKDF2_ITERS)
+    return "pbkdf2_sha256$%d$%s$%s" % (PBKDF2_ITERS, salt.hex(), dk.hex())
+
+
+def check_hash(pw, stored):
+    try:
+        algo, iters, salt, want = stored.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), bytes.fromhex(salt), int(iters))
+        return hmac.compare_digest(dk, bytes.fromhex(want))
+    except (ValueError, TypeError):
+        return False
+
+
+def _write_login(user, pw_hash):
+    tmp = LOGIN_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"username": user, "password_hash": pw_hash, "_help": LOGIN_HELP}, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, LOGIN_FILE)
+
+
 def read_login():
+    """{"username", "hash"} or {"username", "plain"} (only for the built-in admin / admin default, or when a new
+    plain password could not be written back as a hash). A plain "password" in login.json is replaced by a
+    salted hash here, and everyone is signed out, so passwords never stay on disk as plain text."""
     if not os.path.exists(LOGIN_FILE):
-        return {"username": "admin", "password": "admin"}
+        return {"username": "admin", "plain": "admin"}
     with open(LOGIN_FILE, "r", encoding="utf-8") as f:
         raw = f.read().strip()
     if not raw:
-        return {"username": "admin", "password": "admin"}
+        return {"username": "admin", "plain": "admin"}
     data = json.loads(raw)  # raises ValueError on bad JSON -> caller reports it
-    if not isinstance(data, dict) or not isinstance(data.get("password"), str) or not data["password"]:
-        raise ValueError('login.json must look like {"username": "admin", "password": "your password"}')
-    return {"username": str(data.get("username") or "admin"), "password": data["password"]}
+    bad = 'login.json must look like {"username": "admin", "password": "your password"}'
+    if not isinstance(data, dict):
+        raise ValueError(bad)
+    user = str(data.get("username") or "admin")
+    pw = data.get("password")
+    if isinstance(pw, str) and pw:
+        pw_hash = hash_password(pw)
+        try:
+            _write_login(user, pw_hash)
+        except OSError as e:
+            print(f"WARNING: could not save the new password in login.json as a hash ({e}) - it stays as plain text.")
+            return {"username": user, "plain": pw}
+        with _auth_lock:
+            _SESSIONS.clear()           # a new password signs everyone out
+        print("login.json: new password saved as a hash; everyone was signed out.")
+        return {"username": user, "hash": pw_hash}
+    pw_hash = data.get("password_hash")
+    if not isinstance(pw_hash, str) or pw_hash.count("$") != 3:
+        raise ValueError(bad)
+    return {"username": user, "hash": pw_hash}
+
+
+def password_ok(creds, password):
+    """Constant-time check against a hash, or against the plain admin / admin default."""
+    if "hash" in creds:
+        return check_hash(password, creds["hash"])
+    return hmac.compare_digest(password.encode("utf-8"), creds["plain"].encode("utf-8"))
 
 
 # in-memory session store + login-attempt lockout, guarded by one lock since the server is threaded.
@@ -359,6 +518,24 @@ def valid_session(token):
 def drop_session(token):
     with _auth_lock:
         _SESSIONS.pop(token, None)
+        _MAIL_OPEN.pop(token, None)
+
+
+MAIL_UNLOCK_SECONDS = 10 * 60   # the Mail server page stays open this long after the password or the last save
+_MAIL_OPEN = {}                 # session token -> mail page open until (epoch seconds)
+
+
+def set_mail_open(token, on):
+    with _auth_lock:
+        if on and token in _SESSIONS:
+            _MAIL_OPEN[token] = time.time() + MAIL_UNLOCK_SECONDS
+        else:
+            _MAIL_OPEN.pop(token, None)
+
+
+def mail_open(token):
+    with _auth_lock:
+        return token in _SESSIONS and _MAIL_OPEN.get(token, 0) > time.time()
 
 
 def is_locked_out(ip):
@@ -402,6 +579,24 @@ def _person_days(name, year, month, shift_types, shifts, leave):
     return days, by_id
 
 
+def shift_marks(shift_types):
+    """The short mark each shift type gets on the rota (email and PDF): its first letter, or two letters when
+    that would be ambiguous (two types starting alike, or one starting with L, which stands for leave)."""
+    names = {t["id"]: (str(t.get("name") or "?").strip() or "?") for t in shift_types}
+    marks, used = {}, set()
+    for t in shift_types:
+        nm = names[t["id"]]
+        one = nm[:1].upper()
+        clash = sum(1 for n in names.values() if n[:1].upper() == one) > 1 or one == "L"
+        mark = (one + nm[1:2].lower()) if clash and len(nm) > 1 else one
+        while mark in used:
+            mark += "'"
+        marks[t["id"]] = mark
+        used.add(mark)
+    marks["__leave__"] = "L" if "L" not in used else "Lv"
+    return marks
+
+
 def build_shift_message(name, year, month, month_label, shift_types, shifts, leave, palette="classic"):
     """Build (subject, text_body, html_body) for one person's slice of a month's shifts + leave.
     The html calendar is colored with the selected scheme's on-screen colors (SCREEN_PALETTES)."""
@@ -432,71 +627,85 @@ def build_shift_message(name, year, month, month_label, shift_types, shifts, lea
     text_lines += ["", "Sent by Schedule Master."]
     text_body = "\n".join(text_lines) + "\n"
 
-    # ---- html calendar grid + dated list (mirrors the on-screen calendar's color coding) ----
-    lead = date(year, month, 1).isoweekday() % 7  # 0=Sun offset into the first week
+    # ---- html: the month as a rota ledger ----
+    # Like the paper rota on the wall: one ruled line per week with the week number in the margin, seven day
+    # columns, each working day marked with its shift's letter in the selected scheme's colours, and the
+    # totals at the foot. Table layout and inline styles only, so it holds up in Outlook and Gmail.
+    INK, INK2, INK3, RULE, PAPER, TEAL = "#221f1a", "#57524a", "#736e64", "#e4e0d6", "#f6f5f2", "#0f6b5c"
+    SERIF = "Charter,'Bitstream Charter','Iowan Old Style',Georgia,'Times New Roman',serif"
+    MONO = "ui-monospace,Menlo,Consolas,'Courier New',monospace"
     total = calendar.monthrange(year, month)[1]
+    hours = lambda t: f"{escape(str(t['start']))}&nbsp;&ndash;&nbsp;{escape(str(t['end']))}" if t.get("start") and t.get("end") else ""
+    color_of = lambda v: colors[3] if v == "__leave__" else colors[type_order.index(v) % 3]
+
+    marks = shift_marks(shift_types)
+
+    def badge(v, size=12, w=34, h=26):
+        bg, fg = color_of(v)
+        return (f'<div style="margin:4px auto 0;width:{w}px;height:{h}px;line-height:{h}px;border-radius:{h // 2}px;'
+                f'background:{bg};color:{fg};font-weight:bold;font-size:{size}px;text-align:center;font-family:{FONT}">'
+                f'{escape(marks[v])}</div>')
+
+    lead = date(year, month, 1).isoweekday() % 7
     cells = [None] * lead + list(range(1, total + 1))
     cells += [None] * (-len(cells) % 7)
-    mon3 = MONTHS[month - 1][:3]
-    rows = []
+    head = '<td style="width:64px"></td>' + "".join(
+        f'<td align="center" style="padding:0 0 8px;font-size:11px;color:{INK3};font-family:{FONT}">{x}</td>' for x in DOWS)
+    rows = [f"<tr>{head}</tr>"]
     for r in range(0, len(cells), 7):
-        tds = []
-        for i, d in enumerate(cells[r:r + 7]):
+        week = cells[r:r + 7]
+        anchor = week[1] or next(d for d in week if d)        # the row's Monday: weeks are numbered Monday to Sunday
+        wk = date(year, month, anchor).isocalendar()[1]
+        tds = [f'<td valign="top" style="padding:8px 8px 8px 0;border-top:1px solid {RULE};font-family:{SERIF};'
+               f'font-size:13px;color:{INK3};white-space:nowrap">Wk&nbsp;{wk}</td>']
+        for i, d in enumerate(week):
             if d is None:
-                tds.append('<td style="border:0;background:#ffffff">&nbsp;</td>')
+                tds.append(f'<td style="border-top:1px solid {RULE}"></td>')
                 continue
-            weekend = i in (0, 6)
             v = days.get(d)
-            if v == "__leave__":
-                bg, fg = colors[3]
-                body = (f'<div style="background:{bg};color:{fg};font-weight:bold;font-size:11px;'
-                        f'padding:5px 6px;border-radius:5px;margin-top:6px">Leave</div>')
-            elif v:
-                idx = type_order.index(v) % 3
-                bg, fg = colors[idx]
-                body = (f'<div style="background:{bg};color:{fg};font-weight:bold;font-size:11px;'
-                        f'padding:5px 6px;border-radius:5px;margin-top:6px">{escape(by_id[v]["name"])}</div>')
-            else:
-                body = '<div style="color:#8793a0;font-size:11px;margin-top:6px">Off</div>'
-            tds.append(f'<td valign="top" height="60" style="border:1px solid #d8e0e8;border-radius:6px;'
-                       f'padding:6px;background:{"#fcfaf4" if weekend else "#ffffff"};font-family:{FONT}">'
-                       f'<div style="font-weight:bold;font-size:11px;color:#17212b">{DOWS[i]}, {mon3} {d}</div>{body}</td>')
+            shade = "background:#faf9f6;" if i in (0, 6) else ""
+            mark = badge(v) if v else (f'<div style="margin:4px auto 0;height:26px;line-height:26px;font-size:12px;'
+                                       f'color:#c9c4b8;text-align:center;font-family:{FONT}">&middot;</div>')
+            tds.append(f'<td align="center" valign="top" style="padding:8px 2px;border-top:1px solid {RULE};{shade}">'
+                       f'<div style="font-size:12px;color:{INK};font-family:{FONT}">{d}</div>{mark}</td>')
         rows.append(f"<tr>{''.join(tds)}</tr>")
-    head = "".join(f'<td align="center" style="background:#263746;color:#ffffff;font-weight:bold;'
-                   f'font-size:12px;padding:8px 2px;border-radius:5px;font-family:{FONT}">{x}</td>' for x in DOWS)
-    # legend as filled pills (not colored text): a "deep" scheme's text color is light, so plain colored
-    # text would be unreadable on the white email background
-    pill = ('<span style="display:inline-block;background:{bg};color:{fg};font-weight:bold;padding:2px 8px;'
-            'border-radius:9px;margin:2px 0">{label}</span>')
-    key_parts = [pill.format(bg=colors[i % 3][0], fg=colors[i % 3][1], label=escape(t["name"])) +
-                 f' ({escape(str(t["start"]))}\u2013{escape(str(t["end"]))})' for i, t in enumerate(shift_types)]
-    key_parts.append(pill.format(bg=colors[3][0], fg=colors[3][1], label="Leave"))
-    key = " &middot; ".join(key_parts) + " &middot; Grey = Off"
-    items = "".join(
-        f'<tr><td style="padding:3px 0;color:#17212b;font-size:13px;font-family:{FONT}">'
-        f'<b>{date(year, month, d).strftime("%a")} {mon3} {d}</b> \u2013 {escape(label_for(days[d]))}</td></tr>'
-        for d in sorted(days))
-    listing = (f'<tr><td style="padding:0 20px 12px"><div style="font-weight:bold;font-size:14px;'
-               f'color:#17212b;margin-bottom:4px;font-family:{FONT}">Your dates</div>'
-               f'<table role="presentation" cellpadding="0" cellspacing="0">'
-               f'{items or f"<tr><td style=\"font-size:13px;color:#687684\">No shifts this month.</td></tr>"}'
-               f'</table></td></tr>')
+
+    key = []
+    for t in shift_types:
+        bg, fg = color_of(t["id"])
+        n = counts.get(t["id"], 0)
+        key.append(f'<tr><td style="padding:3px 0;width:30px"><div style="width:26px;height:18px;line-height:18px;text-align:center;'
+                   f'border-radius:9px;background:{bg};color:{fg};font-weight:bold;font-size:11px;font-family:{FONT}">{escape(marks[t["id"]])}</div></td>'
+                   f'<td style="padding:3px 10px;font-size:13px;color:{INK};font-family:{FONT}">{escape(t["name"])}</td>'
+                   f'<td style="padding:3px 10px;font-family:{MONO};font-size:12px;color:{INK2}">{hours(t)}</td>'
+                   f'<td align="right" style="padding:3px 0;font-size:13px;color:{INK};font-family:{FONT}"><b>{n}</b> shift{"" if n == 1 else "s"}</td></tr>')
+    bg, fg = colors[3]
+    key.append(f'<tr><td style="padding:3px 0;width:30px"><div style="width:26px;height:18px;line-height:18px;text-align:center;'
+               f'border-radius:9px;background:{bg};color:{fg};font-weight:bold;font-size:11px;font-family:{FONT}">{marks["__leave__"]}</div></td>'
+               f'<td style="padding:3px 10px;font-size:13px;color:{INK};font-family:{FONT}">Leave</td><td></td>'
+               f'<td align="right" style="padding:3px 0;font-size:13px;color:{INK};font-family:{FONT}"><b>{n_leave}</b> day{"" if n_leave == 1 else "s"}</td></tr>')
+
+    intro = (f"Hello {escape(first_name)}. Your marked days for {escape(month_label)} are below, one line per week."
+             if days else f"Hello {escape(first_name)}. Nothing is planned for you in {escape(month_label)}.")
     html_body = (
-        '<!doctype html><html><body style="margin:0;padding:0;background:#f4f6f8">'
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8">'
-        '<tr><td align="center" style="padding:16px 8px">'
-        f'<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;'
-        f'max-width:720px;background:#ffffff;border:1px solid #d8e0e8;border-radius:10px;font-family:{FONT}">'
-        '<tr><td style="background:#17324d;color:#ffffff;padding:16px 20px;border-radius:10px 10px 0 0">'
-        f'<div style="font-size:20px;font-weight:bold">{escape(month_label)} Shift Calendar</div>'
-        f'<div style="font-size:12px;opacity:.85;margin-top:4px">{escape(name)}</div></td></tr>'
-        f'<tr><td style="padding:16px 20px 6px;color:#17212b;font-size:14px">Hello {escape(first_name)}, '
-        f'here are your shifts for {escape(month_label)}.<br><b>{escape(summary_line)}</b></td></tr>'
-        f'<tr><td style="padding:4px 20px 10px;color:#687684;font-size:12px">{key}</td></tr>'
-        '<tr><td style="padding:0 14px 16px"><table role="presentation" width="100%" cellpadding="0" '
-        f'cellspacing="4" style="table-layout:fixed;border-collapse:separate"><tr>{head}</tr>{"".join(rows)}</table></td></tr>'
-        f'{listing}'
-        '<tr><td style="padding:0 20px 16px;color:#8793a0;font-size:11px">Sent by Schedule Master.</td></tr>'
+        f'<!doctype html><html><body style="margin:0;padding:0;background:{PAPER}">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}">'
+        '<tr><td align="center" style="padding:24px 10px">'
+        f'<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;'
+        f'background:#ffffff;border:1px solid {RULE};border-radius:4px">'
+        f'<tr><td style="padding:28px 32px 0;font-family:{FONT}">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        f'<td valign="bottom" style="font-family:{SERIF};font-size:30px;color:{INK};line-height:1.1">{escape(MONTHS[month - 1])}<br>'
+        f'<span style="font-size:15px;color:{INK3}">{year} &middot; rota for {escape(name)}</span></td>'
+        f'<td valign="bottom" align="right" style="font-size:12px;color:{TEAL};font-weight:bold;font-family:{FONT}">Schedule Master</td>'
+        f'</tr></table><div style="border-top:2px solid {INK};margin-top:14px;font-size:0;line-height:0">&nbsp;</div></td></tr>'
+        f'<tr><td style="padding:16px 32px 4px;font-size:14px;line-height:1.5;color:{INK2};font-family:{FONT}">{intro}</td></tr>'
+        f'<tr><td style="padding:12px 32px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="table-layout:fixed">{"".join(rows)}</table></td></tr>'
+        f'<tr><td style="padding:12px 32px 20px"><div style="border-top:2px solid {INK};padding-top:12px">'
+        f'<table role="presentation" cellpadding="0" cellspacing="0" width="100%">{"".join(key)}</table></div></td></tr>'
+        f'<tr><td style="padding:12px 32px 22px;background:{PAPER};font-size:12px;line-height:1.5;color:{INK3};font-family:{FONT}">'
+        'Only your own shifts are on this rota. The PDF and calendar file attached have the same dates. Sent by Schedule Master.</td></tr>'
         '</table></td></tr></table></body></html>'
     )
     return subject, text_body, html_body
@@ -522,8 +731,12 @@ _HELVB_W = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333
             611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584]
 
 
-def _pdf_text_width(text, size, bold=False):
+def _pdf_text_width(text, size, bold=False, font=None):
     import unicodedata
+    if font == "mono":
+        return len(text) * 0.6 * size              # Courier: every character is 600/1000 wide
+    if font == "serif":
+        return _pdf_text_width(text, size) * 0.92  # Times-Roman runs a little narrower than Helvetica
     table = _HELVB_W if bold else _HELV_W
     total = 0
     for ch in text:
@@ -590,17 +803,18 @@ class _PdfPage:
             self.ops.append(f"{_pdf_rgb(stroke)} RG {line:.2f} w")
         self.ops.append(path + (" B" if fill and stroke else (" f" if fill else " S")))
 
-    def text(self, x, y, text, size, color="#17212b", bold=False, align="left", max_w=None):
-        if max_w is not None:
+    def text(self, x, y, text, size, color="#17212b", bold=False, align="left", max_w=None, font=None):
+        if max_w is not None and font is None:
             text = _pdf_fit(text, size, max_w, bold)
         if not text:
             return
-        tw = _pdf_text_width(text, size, bold)
+        tw = _pdf_text_width(text, size, bold, font)
         if align == "center":
             x -= tw / 2
         elif align == "right":
             x -= tw
-        self.ops.append(f"BT /{'F2' if bold else 'F1'} {size:.2f} Tf {_pdf_rgb(color)} rg "
+        fid = {"serif": "F3", "mono": "F4"}.get(font) or ("F2" if bold else "F1")
+        self.ops.append(f"BT /{fid} {size:.2f} Tf {_pdf_rgb(color)} rg "
                         f"{x:.2f} {self.h - y - size * 0.8:.2f} Td {_pdf_str(text)} Tj ET")
 
     def to_pdf(self, title=""):
@@ -610,11 +824,13 @@ class _PdfPage:
             b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {self.w} {self.h}] /Contents 4 0 R "
-             f"/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>").encode("ascii"),
+             f"/Resources << /Font << /F1 5 0 R /F2 6 0 R /F3 8 0 R /F4 9 0 R >> >> >>").encode("ascii"),
             b"<< /Length %d /Filter /FlateDecode >>\nstream\n" % len(stream) + stream + b"\nendstream",
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
             (f"<< /Title {_pdf_str(title)} /Producer (Schedule Master) >>").encode("latin-1"),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>",
         ]
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
@@ -630,87 +846,88 @@ class _PdfPage:
 
 
 def build_shift_pdf(name, year, month, month_label, shift_types, shifts, leave, palette="classic"):
-    """One-page landscape A4 PDF: this person's month as a Sun-Sat grid (same layout as the on-screen /
-    printed calendar), with a shift-count summary and legend, in the exact colors of SCREEN_PALETTES[palette]."""
+    """One-page landscape A4 PDF of this person's month as a rota ledger, like the email: the month in serif
+    over a heavy rule, one ruled line per week with the week number in the margin, each working day marked
+    with its shift (name and hours) in the colours of SCREEN_PALETTES[palette], and the totals at the foot."""
     colors = SCREEN_PALETTES.get(palette) or SCREEN_PALETTES["classic"]
     days, by_id = _person_days(name, year, month, shift_types, shifts, leave)
     type_order = [t["id"] for t in shift_types]
     counts = {tid: sum(1 for v in days.values() if v == tid) for tid in type_order}
     n_leave = sum(1 for v in days.values() if v == "__leave__")
-    n_shifts = sum(counts.values())
-    breakdown = ", ".join(f"{counts[tid]} {by_id[tid]['name']}" for tid in type_order if counts[tid]) or "0"
-    summary = f"{n_shifts} shift(s): {breakdown}" + (f", {n_leave} leave day(s)" if n_leave else "") + "."
+    marks = shift_marks(shift_types)
+    ink, ink2, ink3, rule, paper, teal = "#221f1a", "#57524a", "#736e64", "#d9d5cc", "#faf9f6", "#0f6b5c"
+    color_of = lambda v: colors[3] if v == "__leave__" else colors[type_order.index(v) % 3]
+    times_of = lambda t: f"{t['start']}-{t['end']}" if t.get("start") and t.get("end") else ""
 
-    W, H, M = 842, 595, 28  # A4 landscape, points; M = page margin
+    W, H, M = 842, 595, 32  # A4 landscape, points; M = page margin
     pg = _PdfPage(W, H)
-    # header band
-    pg.rect(M, M, W - 2 * M, 50, fill="#17324d", radius=8)
-    pg.text(M + 16, M + 10, f"{month_label} Shift Calendar", 18, color="#ffffff", bold=True, max_w=W - 2 * M - 32)
-    pg.text(M + 16, M + 33, name, 10.5, color="#dbe4ee", max_w=W - 2 * M - 32)
-    # summary + legend
-    y = M + 62
-    pg.text(M, y, summary, 11, bold=True, max_w=W - 2 * M)
-    y += 18
-    x = M
-    legend = [(t["name"] + (f"  {t['start']}\u2013{t['end']}" if t.get("start") and t.get("end") else ""),
-               colors[i % 3]) for i, t in enumerate(shift_types)]
-    legend.append(("Leave", colors[3]))
-    for label, (bg, fg) in legend:
-        wlab = min(_pdf_text_width(label, 9, True) + 16, 200)
-        if x + wlab > W - M:
-            break
-        pg.rect(x, y, wlab, 15, fill=bg, radius=7)
-        pg.text(x + wlab / 2, y + 3.5, label, 9, color=fg, bold=True, align="center", max_w=wlab - 10)
-        x += wlab + 6
-    pg.text(x + 2, y + 3.5, "Off = no shift", 9, color="#687684")
-    y += 24
-    # weekday header pills (matches the print stylesheet's dark weekday header)
-    gap = 4
-    col_w = (W - 2 * M - 6 * gap) / 7.0
+    # header: the month in serif, whose rota it is, the app name in teal, a heavy rule
+    pg.text(M, M, MONTHS[month - 1], 28, color=ink, font="serif")
+    pg.text(M, M + 34, f"{year}  \u00b7  rota for {name}", 12, color=ink3, font="serif")
+    pg.text(W - M, M + 36, "Schedule Master", 9.5, color=teal, bold=True, align="right")
+    pg.rect(M, M + 54, W - 2 * M, 1.6, fill=ink)
+    # the ledger
+    margin_w, y = 46, M + 64
+    col_w = (W - 2 * M - margin_w) / 7.0
+    x0 = M + margin_w
     for i, dname in enumerate(DOWS):
-        cx = M + i * (col_w + gap)
-        pg.rect(cx, y, col_w, 18, fill="#1e293b", radius=4)
-        pg.text(cx + col_w / 2, y + 4.5, dname, 9.5, color="#ffffff", bold=True, align="center")
-    y += 18 + gap
-    # month grid
+        pg.text(x0 + i * col_w + col_w / 2, y, dname, 8.5, color=ink3, align="center")
+    y += 14
     lead = date(year, month, 1).isoweekday() % 7
     total = calendar.monthrange(year, month)[1]
     cells = [None] * lead + list(range(1, total + 1))
     cells += [None] * (-len(cells) % 7)
     n_rows = len(cells) // 7
-    footer_h = 16
-    row_h = min(78, (H - M - footer_h - y - (n_rows - 1) * gap) / n_rows)
-    mon3 = MONTHS[month - 1][:3]
+    key_rows = len(shift_types) + 1
+    foot_h = 14 + key_rows * 15 + 22
+    row_h = min(84, (H - M - foot_h - y) / n_rows)
     for r in range(n_rows):
-        for i in range(7):
-            d = cells[r * 7 + i]
+        week = cells[r * 7:r * 7 + 7]
+        cy = y + r * row_h
+        for i in (0, 6):
+            if week[i] is not None:
+                pg.rect(x0 + i * col_w, cy, col_w, row_h, fill=paper)
+        pg.rect(M, cy, W - 2 * M, 0.6, fill=rule)
+        anchor = week[1] or next(d for d in week if d)       # the row's Monday: weeks run Monday to Sunday
+        pg.text(M, cy + 7, f"Wk {date(year, month, anchor).isocalendar()[1]}", 10, color=ink3, font="serif")
+        for i, d in enumerate(week):
             if d is None:
                 continue
-            cx, cy = M + i * (col_w + gap), y + r * (row_h + gap)
-            weekend = i in (0, 6)
-            pg.rect(cx, cy, col_w, row_h, fill="#fcfaf4" if weekend else "#ffffff", stroke="#8a8578", radius=5, line=0.6)
-            pg.text(cx + 6, cy + 5, f"{mon3} {d}", 9, color="#17212b", bold=True)
+            cx = x0 + i * col_w
+            pg.text(cx + col_w / 2, cy + 6, str(d), 10, color=ink, align="center")
             v = days.get(d)
-            chip_y, chip_h = cy + 20, min(30, row_h - 26)
-            if v == "__leave__":
-                bg, fg = colors[3]
-                pg.rect(cx + 5, chip_y, col_w - 10, chip_h, fill=bg, stroke="#000000", radius=4, line=0.3)
-                pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 5, "Leave", 10, color=fg, bold=True, align="center")
-            elif v:
-                t = by_id[v]
-                bg, fg = colors[type_order.index(v) % 3]
-                pg.rect(cx + 5, chip_y, col_w - 10, chip_h, fill=bg, stroke="#000000", radius=4, line=0.3)
-                times = f"{t['start']}\u2013{t['end']}" if t.get("start") and t.get("end") else ""
-                if times and chip_h >= 24:
-                    pg.text(cx + col_w / 2, chip_y + 4, t["name"], 10, color=fg, bold=True, align="center", max_w=col_w - 16)
-                    pg.text(cx + col_w / 2, chip_y + 16, times, 8, color=fg, align="center", max_w=col_w - 16)
+            if v:
+                bg, fg = color_of(v)
+                ph = min(30, row_h - 26)
+                py = cy + 21
+                pg.rect(cx + 6, py, col_w - 12, ph, fill=bg, radius=ph / 2 if ph < 20 else 8)
+                label = "Leave" if v == "__leave__" else by_id[v]["name"]
+                hrs = "" if v == "__leave__" else times_of(by_id[v])
+                if hrs and ph >= 26:
+                    pg.text(cx + col_w / 2, py + 4.5, label, 9.5, color=fg, bold=True, align="center", max_w=col_w - 20)
+                    pg.text(cx + col_w / 2, py + 16.5, hrs, 7.5, color=fg, align="center", font="mono")
                 else:
-                    pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 5, t["name"], 10, color=fg, bold=True,
-                            align="center", max_w=col_w - 16)
+                    pg.text(cx + col_w / 2, py + ph / 2 - 4.5, label, 9.5, color=fg, bold=True, align="center", max_w=col_w - 20)
             else:
-                pg.text(cx + col_w / 2, chip_y + chip_h / 2 - 4, "Off", 9, color="#8793a0", align="center")
-    pg.text(M, H - M - 10, f"Sent by Schedule Master \u00b7 {name} \u00b7 {month_label}", 8, color="#8793a0", max_w=W - 2 * M)
-    return pg.to_pdf(title=f"{month_label} shifts - {name}")
+                pg.text(cx + col_w / 2, cy + 30, "\u00b7", 12, color="#c9c4b8", align="center")
+    # the foot: totals per shift type, then leave
+    fy = y + n_rows * row_h + 8
+    pg.rect(M, fy, W - 2 * M, 1.6, fill=ink)
+    fy += 10
+    for t in shift_types + [{"id": "__leave__", "name": "Leave"}]:
+        v = t["id"]
+        bg, fg = color_of(v)
+        pg.rect(M, fy, 24, 13, fill=bg, radius=6.5)
+        pg.text(M + 12, fy + 2.5, marks[v], 8, color=fg, bold=True, align="center")
+        pg.text(M + 34, fy + 2, t["name"], 10, color=ink, max_w=200)
+        if v != "__leave__":
+            pg.text(M + 250, fy + 2.5, times_of(t), 9, color=ink2, font="mono")
+        n = n_leave if v == "__leave__" else counts.get(v, 0)
+        unit = ("day" if v == "__leave__" else "shift") + ("" if n == 1 else "s")
+        pg.text(W - M, fy + 2, f"{n} {unit}", 10, color=ink, align="right")
+        fy += 15
+    pg.text(M, H - M - 4, f"Only your own shifts are on this rota. Sent by Schedule Master to {name}.", 8, color=ink3, max_w=W - 2 * M)
+    return pg.to_pdf(title=f"{month_label} rota - {name}")
 
 
 def _ics_escape(text):
@@ -791,11 +1008,15 @@ def open_smtp(cfg=None):
     """One SMTP connection, reused for every recipient in a batch rather than reconnecting each time.
     cfg: settings from read_mail_settings() (read here if not given)."""
     cfg = cfg or read_mail_settings()
-    server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
-    server.ehlo()
-    if cfg["use_tls"]:
-        server.starttls(context=ssl.create_default_context())
+    if cfg["security"] == "ssl":
+        server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15, context=ssl.create_default_context())
         server.ehlo()
+    else:
+        server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
+        server.ehlo()
+        if cfg["security"] == "starttls":
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
     if cfg["username"] and cfg["password"]:
         server.login(cfg["username"], cfg["password"])
     return server
@@ -1009,7 +1230,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             # constant-time comparison so response timing doesn't leak how much of the password matched
             user_ok = hmac.compare_digest(username.lower().encode("utf-8"), creds["username"].lower().encode("utf-8"))
-            pass_ok = hmac.compare_digest(password.encode("utf-8"), creds["password"].encode("utf-8"))
+            pass_ok = password_ok(creds, password)
             if user_ok and pass_ok:
                 clear_login_failures(ip)
                 token = create_session()
@@ -1021,6 +1242,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/logout":
             drop_session(self._cookie_token())
             self._send_json(200, {"ok": True}, extra_headers=[("Set-Cookie", self._clear_session_cookie_header())])
+            return
+        if path == "/api/mail":
+            if not self._require_auth():
+                return
+            self._mail_page()
             return
         if path == "/api/send-shifts" and not self._require_auth():
             return
@@ -1111,6 +1337,105 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json(404, {"error": "not found"})
 
 
+def _mail_page_handler(self):
+    """POST /api/mail - see the list of routes at the top of this file."""
+    try:
+        length = int(self.headers.get("Content-Length", 0))
+        req = json.loads((self.rfile.read(length) if length else b"{}").decode("utf-8"))
+        action = req.get("action") if isinstance(req, dict) else None
+    except Exception as e:
+        self._send_json(400, {"error": f"bad request body: {e}"})
+        return
+    token = self._cookie_token()
+    if action == "lock":
+        set_mail_open(token, False)
+        self._send_json(200, {"ok": True})
+        return
+    if action == "unlock":
+        ip = self._client_ip()
+        if is_locked_out(ip):
+            self._send_json(429, {"error": "Too many wrong passwords. Wait a bit and try again."})
+            return
+        password = req.get("password")
+        if not isinstance(password, str) or not password:
+            self._send_json(400, {"error": "Enter the admin password."})
+            return
+        try:
+            creds = read_login()
+        except ValueError as e:
+            self._send_json(500, {"error": f"login.json is unreadable: {e}"})
+            return
+        if not password_ok(creds, password):
+            record_login_failure(ip)
+            self._send_json(403, {"error": "Wrong password."})
+            return
+        clear_login_failures(ip)
+        set_mail_open(token, True)
+    elif action in ("save", "test"):
+        if not mail_open(token):
+            self._send_json(403, {"error": "The mail settings are locked. Go back and enter the admin password again.",
+                                  "locked": True})
+            return
+    else:
+        self._send_json(400, {"error": "bad request"})
+        return
+    if action == "save":
+        try:
+            changes = clean_mail_form(req.get("mail"))
+        except ValueError as e:
+            self._send_json(400, {"error": str(e)})
+            return
+        try:
+            write_mail_settings(changes)
+        except OSError as e:
+            self._send_json(500, {"error": f"Could not write mail.json: {e}"})
+            return
+        set_mail_open(token, True)
+        print("Saved mail relay settings to mail.json")
+    if action == "test":
+        to = str(req.get("to") or "").strip()
+        if not EMAIL_RE.match(to):
+            self._send_json(400, {"error": "Enter a valid address to send the test to."})
+            return
+        try:
+            cfg = read_mail_settings()
+        except (ValueError, OSError) as e:
+            self._send_json(400, {"error": f"mail.json is unreadable: {e}"})
+            return
+        try:
+            server = open_smtp(cfg)
+            try:
+                send_via(server, to, "Schedule Master test email",
+                         "This is a test email from Schedule Master.\n\nThe mail relay settings work: shifts sent from "
+                         f"Schedule Master will come from {cfg['from_addr']} through {cfg['host']}:{cfg['port']}.\n",
+                         "<p>This is a test email from Schedule Master.</p><p>The mail relay settings work: shifts sent "
+                         f"from Schedule Master will come from {escape(cfg['from_addr'])} through "
+                         f"{escape(cfg['host'])}:{cfg['port']}.</p>", None, cfg)
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
+        except Exception as e:
+            self._send_json(502, {"error": f"The test email was not sent: {e or e.__class__.__name__}"})
+            return
+        set_mail_open(token, True)
+        print(f"Sent a test email to {to}")
+        self._send_json(200, {"ok": True})
+        return
+    try:
+        cfg = read_mail_settings()
+        self._send_json(200, {"mail": mail_form(cfg), "ready": True})
+    except (ValueError, OSError) as e:
+        cfg = _finish_security({"host": SMTP_HOST, "port": SMTP_PORT, "from_name": SMTP_FROM_NAME, "from_addr": SMTP_FROM_ADDR,
+                                "username": None, "password": None, "use_tls": SMTP_USE_TLS, "security": SMTP_SECURITY})
+        self._send_json(200, {"mail": mail_form(cfg), "ready": False,
+                              "problem": f"mail.json is unreadable ({e}). Saving replaces it with the settings below."})
+
+
+Handler._mail_page = _mail_page_handler
+
+
 def find_free_port(start):
     port = start
     for _ in range(20):
@@ -1138,9 +1463,14 @@ def main():
     print("Press Ctrl+C to stop.")
     if not os.path.exists(LOGIN_FILE):
         print("No login.json found - signing in with the default admin / admin for now.")
+    else:
+        try:
+            read_login()            # turns a plain "password" into a hash right away
+        except (ValueError, OSError) as e:
+            print(f"WARNING: login.json is unreadable ({e}) - nobody can sign in until it is fixed.")
     try:
         _mc = read_mail_settings()
-        print(f"Mail relay: {_mc['host']}:{_mc['port']} "
+        print(f"Mail relay: {_mc['host']}:{_mc['port']} ({_mc['security']}) "
               f"({'from mail.json' if os.path.exists(MAIL_FILE) else 'defaults - no mail.json'})")
     except (ValueError, OSError) as e:
         print(f"WARNING: mail.json is unreadable ({e}) - sending email will fail until it is fixed.")
