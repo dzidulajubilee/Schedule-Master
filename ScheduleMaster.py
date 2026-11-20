@@ -36,6 +36,7 @@ Serves ScheduleMaster.html and its companion files from this folder, and exposes
                         good for 30 days and returns {"ok": true}; on failure, 401. An address gets
                         locked out for 15 minutes after 5 wrong attempts in a row (429 while locked).
   POST /api/logout   -> clears the current session cookie.
+  POST /api/admin    -> {"password"}: checks the admin password for the Algorithm tab (same lockout as sign-in).
   POST /api/mail     -> the Mail server page (signed in, plus the admin password). Body {"action": ...}:
                         "unlock" {"password"} checks the password (same lockout as sign-in) and opens the
                         page for this session for 10 minutes; "save" {"mail": {...}} writes mail.json;
@@ -1248,6 +1249,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             self._mail_page()
             return
+        if path == "/api/admin":
+            if not self._require_auth():
+                return
+            self._admin_check()
+            return
         if path == "/api/send-shifts" and not self._require_auth():
             return
         if path == "/api/send-shifts":
@@ -1434,6 +1440,39 @@ def _mail_page_handler(self):
 
 
 Handler._mail_page = _mail_page_handler
+
+
+def _admin_check_handler(self):
+    """POST /api/admin {"password"}: checks the admin password for a locked page of the app (the Algorithm
+    tab). Same lockout as the sign-in; nothing is stored or opened on the server."""
+    try:
+        length = int(self.headers.get("Content-Length", 0))
+        req = json.loads((self.rfile.read(length) if length else b"{}").decode("utf-8"))
+        password = req.get("password") if isinstance(req, dict) else None
+    except Exception as e:
+        self._send_json(400, {"error": f"bad request body: {e}"})
+        return
+    ip = self._client_ip()
+    if is_locked_out(ip):
+        self._send_json(429, {"error": "Too many wrong passwords. Wait a bit and try again."})
+        return
+    if not isinstance(password, str) or not password:
+        self._send_json(400, {"error": "Enter the admin password."})
+        return
+    try:
+        creds = read_login()
+    except ValueError as e:
+        self._send_json(500, {"error": f"login.json is unreadable: {e}"})
+        return
+    if not password_ok(creds, password):
+        record_login_failure(ip)
+        self._send_json(403, {"error": "Wrong password."})
+        return
+    clear_login_failures(ip)
+    self._send_json(200, {"ok": True})
+
+
+Handler._admin_check = _admin_check_handler
 
 
 def find_free_port(start):

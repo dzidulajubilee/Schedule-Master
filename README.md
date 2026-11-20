@@ -126,6 +126,12 @@ The **Calendar colours** cards on the *Shifts & rules* page switch between 10 co
 9. **Weekend leave auto-fill** — if leave spans a weekend (leave directly either side of Saturday/Sunday — e.g. Friday + Monday, or Friday + Sunday), the weekend day(s) in between are automatically added as leave too.
    Only a gap made up entirely of weekend days is filled; two leave dates further apart (say the 1st and the 28th) leave the weekends between them alone. (Earlier versions filled every weekend between any two leave dates — leave saved with those versions may contain extra weekend days; review it in the Leave tab.)
 10. **Compulsory starters** — up to 4 named people can be forced onto a chosen shift on day 1 of the month; Auto Plot seeds them in before minimum cover runs, so they count toward it automatically, then they're treated as ordinary people for the rest of the month (see §9).
+11. **Shifts placed by hand are kept** — anything placed with the Plot tool is outlined on the calendar, and Auto Plot plans around it. **More → Auto Plot from scratch** lets it move those too.
+12. **Weekends shared fairly** — Saturday and Sunday shifts are spread by the weekend days each person is available. Workload shows a **Weekends** column.
+13. **Fair across months** — weekends and overnight shift types (ending at or before they start) are evened out using the last 3 months of saved records (the latest record of each month). Workload shows the past counts beside this month's.
+
+### Algorithm tab (rule switches)
+The **Algorithm** tab, behind the admin password, turns rules 2, 5, 6, 9, 11, 12 and 13 on or off (rule 5 has two switches: keep-apart pairs at all, and the ordinary-weekday part). Everything is on by default. It locks again when you leave the tab, and a reload never lands on it. The switches are saved in the browser with the rest of the planner and inside each saved record.
 
 ---
 
@@ -159,10 +165,13 @@ Auto Plot's job: produce one full month's roster that satisfies the hard rules a
    - Missing a required shift type for someone who worked that month (if "every person needs every shift type" is on).
    - **Unevenness**: the spread (max − min) and variance of "quota left unused" across staff — this is weighted heavily so the optimizer actively favors an even spread of total shifts.
    - A secondary, smaller penalty for an uneven personal split between shift types (e.g. mostly Day vs mostly Night) — a tie-breaker under the total-quota fairness above.
+   - Weekend shifts away from each person's fair share (weighted below the spread of totals), and, with saved history, overnight shifts away from each person's share after what they did in past months.
 
 5. **Repeat and pick the best.** For each rotation pattern, build several candidate plans (attempts) and keep the lowest-scoring one. Compare the best of each pattern, then run more attempts on the overall best pattern to refine it further.
 
-6. **Commit.** The winning plan replaces the month's shifts. The status line reports the pattern used, its score, and how many minimum-coverage/keep-apart issues (if any) remain unresolved — a non-zero count means staffing is too tight to fully satisfy every rule.
+6. **Share weekends.** On the 20 best plans, two people may swap their whole schedules over a stretch of days when that brings weekend shifts closer to each person's fair share. Every day keeps the same cover, both keep the same total, and the swap is only kept if nothing gets worse for either of them (no new flip, long run, short rest, keep-apart clash, leave conflict or moved hand-placed shift). The best plan after this wins.
+
+7. **Commit.** The winning plan replaces the month's shifts. The status line reports the pattern used, its score, and how many minimum-coverage/keep-apart issues (if any) remain unresolved — a non-zero count means staffing is too tight to fully satisfy every rule.
 
 ### Manual Plot
 Manual Plot (the **Plot** tab beside the calendar) places one person on one or more days at once. Pick a person, click days on the mini calendar to select them (days on leave are grayed out and can't be selected; days that already have a shift show it as a small colored tag), choose a shift type (or "Off" to clear), then apply.

@@ -189,7 +189,20 @@ details.menu[open]>summary{background:var(--raised);}
 .main{max-width:1600px;margin:0 auto;padding:24px 20px 48px;}
 .page{display:none;}
 :root[data-page=roster] .page[data-page=roster],:root[data-page=staff] .page[data-page=staff],:root[data-page=rules] .page[data-page=rules],
-:root[data-page=records] .page[data-page=records],:root[data-page=email] .page[data-page=email]{display:block;}
+:root[data-page=records] .page[data-page=records],:root[data-page=email] .page[data-page=email],:root[data-page=algorithm] .page[data-page=algorithm]{display:block;}
+.tab .lockIcon{width:12px;height:12px;vertical-align:-1px;color:var(--muted);}
+.tab[aria-current=page] .lockIcon{display:none;}
+.switchGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 40px;}
+.switchGrid h3{font-size:13px;font-weight:600;margin:4px 0 4px;}
+.switchGrid h3.sep{margin-top:20px;}
+.sw{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;}
+.sw b{display:block;font-size:13px;font-weight:500;color:var(--text);}
+.sw small{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45;}
+.sw input[type=checkbox]{width:28px;height:16px;border-radius:8px;border:0;background:var(--border2);position:relative;display:block;margin-top:1px;transition:background-color .15s var(--ease);}
+.sw input[type=checkbox]::before{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;clip-path:none;transform:none;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s var(--ease);}
+.sw input[type=checkbox]:checked{background:var(--accent);}
+.sw input[type=checkbox]:checked::before{transform:translateX(12px);}
+@media (max-width:960px){.switchGrid{grid-template-columns:1fr;}}
 .pageHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
 .pageHead h1{font-family:var(--serif);font-size:30px;font-weight:500;letter-spacing:-.01em;line-height:1.15;}
 .pageHead p{margin:6px 0 0;font-size:13px;color:var(--t2);max-width:640px;}
@@ -240,6 +253,8 @@ details.menu[open]>summary{background:var(--raised);}
 .chip{display:block;font-size:12px;font-weight:500;line-height:1.3;border-radius:5px;padding:3px 7px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:filter .12s var(--ease);}
 .chip:hover{filter:brightness(.95);}
 .chip.leave{background:var(--leave-bg);color:var(--leave);cursor:default;}
+.chip.pinned{box-shadow:inset 0 0 0 1.5px currentColor;}
+.legend-pill.pin-pill::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2);}
 /* tools: Plot / Leave / Starters */
 .tools{position:sticky;top:120px;}
 .toolTabs{display:flex;gap:2px;padding:2px;background:var(--raised);border-radius:var(--r);margin-bottom:16px;}
@@ -385,6 +400,8 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
 }
 @media (max-width:520px){.brand span,#btnLogout span,#mailBtn span{display:none;}#btnLogout,#mailBtn{width:32px;padding:0;}}
 
+/* print-only parts (the "Duty roster" line, the month after Workload, week numbers) stay hidden on screen */
+.printOnly,.wkno{display:none!important;}
 /* ---------- print: the roster only, always the light version of the chosen scheme ----------
    A rota ledger, like the emailed PDF: the month in serif over a heavy rule, one ruled line per week with
    the week number in the margin, weekends shaded, each person's shift as a tinted chip. */
@@ -487,6 +504,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
       <label class="check"><input type="checkbox" id="showCounts"> Coverage counts on each day</label>
       <label class="check"><input type="checkbox" id="printCoverage"> Coverage check</label>
       <hr>
+      <button id="btnAutoFresh" type="button">Auto Plot from scratch</button>
       <button id="btnClear" type="button">Clear this month</button>
       <button id="btnResetAll" type="button" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all data in this browser</button>
     </div>
@@ -501,6 +519,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
   <button type="button" class="tab" data-nav="rules">Shifts &amp; rules</button>
   <button type="button" class="tab" data-nav="records">Records <span class="count" id="navRecords"></span></button>
   <button type="button" class="tab" data-nav="email">Email <span class="count" id="navEmail"></span></button>
+  <button type="button" class="tab" data-nav="algorithm" title="How Auto Plot plans (needs the admin password)">Algorithm <svg class="i lockIcon" viewBox="0 0 24 24" aria-label="Locked"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
 </nav>
 </header>
 
@@ -542,6 +561,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
         <div class="row" style="margin-top:12px"><button id="mpSelectAll" type="button">Select all</button><button id="mpClearSel" type="button" class="quiet">Clear</button></div>
         <button id="mpApply" class="primary" type="button" style="width:100%">Apply to selected days</button>
         <p class="hint" id="mpSelHint">Click days, pick a shift (or Off) and apply.</p>
+        <p class="hint" style="margin-top:4px">Shifts placed here are kept when you run Auto Plot</p>
       </div>
       <div data-pane="leave" hidden>
         <select id="leavePerson" aria-label="Person on leave"></select>
@@ -655,6 +675,31 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
       <select id="emailPerson" aria-label="Person" style="width:100%"></select>
       <div class="row"><input type="email" id="emailAddress" placeholder="name@example.com" aria-label="Email address"></div>
       <div class="row"><button id="emailSave" class="primary">Save</button><button id="emailDelete" class="quiet">Delete</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Algorithm (behind the admin password) ===== -->
+<section class="page" data-page="algorithm">
+  <div class="pageHead"><div><h1>Algorithm</h1><p>How Auto Plot plans and what the Plot tool and Workload check. Locked: it needs the admin password, and locks again when you leave this tab</p></div></div>
+  <div class="card">
+    <h2>Turn rules on or off</h2><p class="desc">All on by default. Saved in this browser with the rest of the planner, and with records</p>
+    <div class="switchGrid">
+    <div>
+      <h3>Shifts and rest</h3>
+      <label class="sw"><input type="checkbox" data-algo="noFlip"><span><b>No change of shift type on consecutive days</b><small>Once on a shift type, a person stays on it until their block ends. The minimum rest hours still apply</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="quotaCap"><span><b>Nobody goes over their expected shifts</b><small>Off: the Plot tool lets you place more and Workload doesn't flag it. Auto Plot still aims at the expected number</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="keepApart"><span><b>Keep-apart pairs</b><small>Off: the pairs on Shifts & rules are ignored but kept</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="apartWeekday"><span><b>Pairs also avoid sharing an ordinary weekday shift</b><small>Off: they only stay apart on weekends and Keep apart shifts</small></span></label>
+      <h3 class="sep">Leave</h3>
+      <label class="sw"><input type="checkbox" data-algo="bridgeLeave"><span><b>A weekend between two leave days becomes leave</b></span></label>
+    </div>
+    <div>
+      <h3>Fairness</h3>
+      <label class="sw"><input type="checkbox" data-algo="keepPins"><span><b>Keep shifts placed by hand</b><small>Auto Plot plans around shifts placed with the Plot tool</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="shareWeekends"><span><b>Share weekends fairly</b><small>Saturday and Sunday shifts, by the weekend days each person is available</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="history"><span><b>Even out weekends and overnight shifts across months</b><small>Uses the last 3 months of saved records</small></span></label>
+    </div>
     </div>
   </div>
 </section>
@@ -859,15 +904,22 @@ function defaultState(){
     expShifts:14, restHrs:11, rotation:"auto", requireAll:true, weekendLeaveNoQuota:true, includeCoverageInPrint:false,
     keepApart:[[null,null],[null,null]],
     compulsoryStarters: [],
-    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null, palette:"classic"
+    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null, palette:"classic",
+    algo: defaultAlgo(),   // rule switches on the Algorithm tab
+    pinned: []             // shifts placed by hand with the Plot tool, "YYYY-MM-DD|Name": Auto Plot keeps them
   };
 }
+function defaultAlgo(){
+  return {keepPins:true, shareWeekends:true, history:true, noFlip:true, keepApart:true, apartWeekday:true, quotaCap:true, bridgeLeave:true};
+}
+/* Is a rule switch on? (All on unless turned off on the Algorithm tab.) */
+function A(k){ return !(S.algo && S.algo[k]===false); }
 let S=load();
 function load(){
   try{
     let raw=localStorage.getItem("schedulemaster_state");
     if(!raw){ raw=localStorage.getItem("planthat_state"); } // one-time migration from the old key name
-    if(raw) return Object.assign(defaultState(), JSON.parse(raw));
+    if(raw){ const st=Object.assign(defaultState(), JSON.parse(raw)); st.algo=Object.assign(defaultAlgo(), st.algo||{}); if(!Array.isArray(st.pinned)) st.pinned=[]; return st; }
   }catch(e){}
   return defaultState();
 }
@@ -897,7 +949,9 @@ function toMinutes(hhmm){ const [h,m]=hhmm.split(":").map(Number); return h*60+m
 function shiftById(id){ return S.shiftTypes.find(t=>t.id===id); }
 function normalizedPairs(){
   // valid, de-duplicated keep-apart pairs: drops empty/incomplete pairs and a pair naming the same
-  // person twice, and collapses the same pair entered in both slots (in either order) into one
+  // person twice, and collapses the same pair entered in both slots (in either order) into one.
+  // None at all when the Keep-apart switch is off (the pairs themselves are kept).
+  if(!A("keepApart")) return [];
   const seen=new Set(); const out=[];
   S.keepApart.forEach(p=>{
     if(!p[0]||!p[1]||p[0]===p[1]) return;
@@ -991,6 +1045,7 @@ function renderLegend(){
     el.innerHTML+=`<span class="legend-pill" style="--pill-ink:${ink};--pill-bg:${bg}">${esc(t.name)} <span class="legend-time">${esc(t.start)}–${esc(t.end)}</span></span>`;
   });
   el.innerHTML+=`<span class="legend-pill leave-pill">Leave</span>`;
+  if(A("keepPins")) el.innerHTML+=`<span class="legend-pill pin-pill" title="Placed by hand with the Plot tool. Auto Plot keeps these">Placed by hand</span>`;
 }
 
 // ---------- staff ----------
@@ -1177,7 +1232,7 @@ $("leaveAdd").addEventListener("click",()=>{
   // two leave dates was added, so leave on the 1st and the 28th swallowed every weekend in between.
   S.leave[person].sort();
   const weekendFill=[];
-  for(let i=0;i<S.leave[person].length-1;i++){
+  for(let i=0;A("bridgeLeave")&&i<S.leave[person].length-1;i++){   // switch: a weekend between two leave days becomes leave
     const a=S.leave[person][i], b=S.leave[person][i+1];
     const gap=[]; let allWeekend=true;
     for(let cursor=addDaysStr(a,1); cursor<b; cursor=addDaysStr(cursor,1)){
@@ -1283,13 +1338,13 @@ $("mpApply").addEventListener("click",async()=>{
     const r=canPlaceShift(person,ds,typeId,true);
     if(r.blocked) blocked.push(`${ds} — ${r.reason}`);
     else if(r.confirm) softClashes.push({ds,reason:r.reason});
-    else { setPersonShift(ds,person,typeId); applied++; }
+    else { setPersonShift(ds,person,typeId); pinShift(ds,person); applied++; }
   });
   if(softClashes.length){
     const msg=softClashes.map(x=>`${x.ds} — ${x.reason}`).join("\n");
     if(await askConfirm({title:"Keep-apart clash", confirmText:"Place them anyway",
       message:`${softClashes.length} of the selected day(s) have a soft keep-apart clash:\n\n${msg}\n\nPlace them anyway? (Cancel places only the days without a clash.)`})){
-      softClashes.forEach(x=>{ setPersonShift(x.ds,person,typeId); applied++; });
+      softClashes.forEach(x=>{ setPersonShift(x.ds,person,typeId); pinShift(x.ds,person); applied++; });
     }
   }
   save();
@@ -1300,14 +1355,26 @@ $("mpApply").addEventListener("click",async()=>{
   renderAll();
 });
 
+/* ---------- shifts placed by hand ----------
+   The Plot tool marks what it places; Auto Plot keeps those and plans around them (switch: Keep shifts placed by
+   hand). A mark is dropped as soon as its shift is gone (removed, replaced by leave, person removed, month cleared). */
+function pinKey(ds,person){ return ds+"|"+person; }
+function pinShift(ds,person){ const k=pinKey(ds,person); if(!S.pinned.includes(k)) S.pinned.push(k); }
+function isPinned(ds,person){ return S.pinned.includes(pinKey(ds,person)); }
+function prunePins(){
+  const before=S.pinned.length;
+  S.pinned=S.pinned.filter(k=>{ const i=k.indexOf("|"), ds=k.slice(0,i), p=k.slice(i+1); return !!(S.shifts[ds]&&S.shifts[ds][p]); });
+  if(S.pinned.length!==before) save();
+}
+function monthPins(){ return S.pinned.filter(k=>{ const [yy,mm]=k.slice(0,10).split("-").map(Number); return yy===S.year && mm-1===S.month; }); }
 function canPlaceShift(person,dateStr,typeId,forManual){
   const type=shiftById(typeId);
   const [y,m,d]=dateStr.split("-").map(Number);
   if(isOnLeave(person,dateStr)) return {blocked:true,reason:`${person} is on leave on ${dateStr}.`};
   const prevD=addDaysStr(dateStr,-1), nextD=addDaysStr(dateStr,1);
   const prevType=personShift(prevD,person), nextType=personShift(nextD,person);
-  if(prevType && prevType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day before (${shiftById(prevType).name}).`};
-  if(nextType && nextType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day after (${shiftById(nextType).name}).`};
+  if(A("noFlip") && prevType && prevType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day before (${shiftById(prevType).name}).`};
+  if(A("noFlip") && nextType && nextType!==typeId) return {blocked:true,reason:`Would flip shift type vs the day after (${shiftById(nextType).name}).`};
   if(prevType){ const gap=restGapHours(shiftById(prevType),type); if(prevType!==typeId && gap<S.restHrs) return {blocked:true,reason:`Only ${gap}h rest before this shift (need ${S.restHrs}h).`}; }
   const weekend=isWeekend(y,m-1,d);
   const hardClashes=[], softClashes=[];
@@ -1323,13 +1390,13 @@ function canPlaceShift(person,dateStr,typeId,forManual){
     const names=hardClashes.join(", ");
     return {blocked:true,reason:`Keep-apart: ${names} already ${hardClashes.length>1?"have":"has"} ${type.name} on ${dateStr}.`};
   }
-  if(softClashes.length){
+  if(softClashes.length && A("apartWeekday")){
     const names=softClashes.join(", ");
     return {confirm:true,reason:`${names} ${softClashes.length>1?"share":"shares"} this weekday ${type.name} shift (keep-apart pair).`};
   }
   const quota=quotaFor(person,y,m-1);
   const current=totalShiftsFor(person,dateStr,y,m-1);
-  if(current>=quota) return {blocked:true,reason:`${person} is already at their quota (${quota}).`};
+  if(current>=quota && A("quotaCap")) return {blocked:true,reason:`${person} is already at their quota (${quota}).`};
   return {ok:true};
 }
 
@@ -1415,7 +1482,7 @@ function renderCalendar(){
     let html=`<div class="daytop"><div class="daynum">${d}</div>${badges}</div><div class="chiplist">`;
     S.shiftTypes.forEach((t,i)=>{
       const people=Object.keys(dayShifts).filter(p=>dayShifts[p]===t.id && (S.view==="__all__"||S.view===p));
-      people.forEach(p=>{ html+=`<span class="chip" data-p="${esc(p)}" data-d="${esc(ds)}" style="background:${CHIP_COLORS[i%3][1]};color:${CHIP_COLORS[i%3][0]}">${esc(p)}</span>`; });
+      people.forEach(p=>{ const pin=A("keepPins")&&isPinned(ds,p); html+=`<span class="chip${pin?" pinned":""}" data-p="${esc(p)}" data-d="${esc(ds)}"${pin?' title="Placed by hand: Auto Plot keeps it"':''} style="background:${CHIP_COLORS[i%3][1]};color:${CHIP_COLORS[i%3][0]}">${esc(p)}</span>`; });
     });
     for(const p in S.leave){
       if(S.view!=="__all__" && S.view!==p) continue;
@@ -1450,7 +1517,9 @@ function longestRun(person){
 }
 function renderWorkload(){
   const table=$("workloadTable"); 
-  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
+  const hist=A("history")?monthHistory():null, hasH=!!(hist&&hist.months.length);
+  const hNote=n=>hasH?` <span class="small">(${n} in ${hist.months.length===1?"last month":"last "+hist.months.length+" months"})</span>`:"";
+  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th title="Shifts on a Saturday or Sunday">Weekends</th><th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
   let body="";
   S.staff.forEach(person=>{
     const total=totalShiftsFor(person,null);
@@ -1460,7 +1529,7 @@ function renderWorkload(){
     const leaveN=(S.leave[person]||[]).filter(d=>{ const [yy,mm]=d.split("-").map(Number); return yy===S.year && mm-1===S.month; }).length;
     const run=longestRun(person);
     const problems=[];
-    if(total>quota) problems.push("over quota");
+    if(total>quota && A("quotaCap")) problems.push("over quota");
     if(run>3) problems.push("run too long");
     if(S.requireAll && S.shiftTypes.some((t,i)=>counts[i]===0 && total>0)) problems.push("missing a shift type");
     // rest-rule / flip check
@@ -1469,7 +1538,7 @@ function renderWorkload(){
       const cur=S.shifts[dates[i]][person];
       const nextD=addDaysStr(dates[i],1);
       const nxt=S.shifts[nextD]&&S.shifts[nextD][person];
-      if(nxt && nxt!==cur){ problems.push("shift-type flip"); break; }
+      if(A("noFlip") && nxt && nxt!==cur){ problems.push("shift-type flip"); break; }
     }
     for(const pair of normalizedPairs()){
       if(!pair.includes(person)) continue;
@@ -1483,7 +1552,8 @@ function renderWorkload(){
       }
     }
     const status=problems.length?[...new Set(problems)].join(", "):"OK";
-    body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map(c=>`<td>${c}</td>`).join("")+`<td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
+    const wkN=monthDates.filter(d=>{ const [yy,mm,dd]=d.split("-").map(Number); return isWeekend(yy,mm-1,dd)&&S.shifts[d][person]; }).length;
+    body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map((c,i)=>`<td>${c}${isOvernight(S.shiftTypes[i])?hNote(hist?hist.N[person]||0:0):""}</td>`).join("")+`<td>${wkN}${hNote(hist?hist.W[person]||0:0)}</td><td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
   });
   table.innerHTML=head+body;
 }
@@ -1529,7 +1599,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
+  prunePins(); renderAlgo(); renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -1699,7 +1769,8 @@ function snapshotNow(label){
     data: JSON.parse(JSON.stringify({
       staff:S.staff, shiftTypes:S.shiftTypes, keepApart:S.keepApart, leave:S.leave, shifts:monthShifts,
       expShifts:S.expShifts, restHrs:S.restHrs, rotation:S.rotation,
-      requireAll:S.requireAll, weekendLeaveNoQuota:S.weekendLeaveNoQuota, compulsoryStarters:S.compulsoryStarters
+      requireAll:S.requireAll, weekendLeaveNoQuota:S.weekendLeaveNoQuota, compulsoryStarters:S.compulsoryStarters,
+      pinned:S.pinned.filter(k=>monthShifts[k.slice(0,10)]&&monthShifts[k.slice(0,10)][k.slice(11)]), algo:S.algo
     }))
   };
 }
@@ -1724,6 +1795,10 @@ function plotRecord(rec){
   S.requireAll=d.requireAll; S.weekendLeaveNoQuota=d.weekendLeaveNoQuota;
   if(d.compulsoryStarters) S.compulsoryStarters=JSON.parse(JSON.stringify(d.compulsoryStarters));
   for(const ds in d.shifts) S.shifts[ds]=JSON.parse(JSON.stringify(d.shifts[ds]));
+  // hand-placed marks of that month come from the record (older records have none); switches too (older: all on)
+  const recPins=(Array.isArray(d.pinned)?d.pinned:[]).filter(k=>typeof k==="string");
+  S.pinned=S.pinned.filter(k=>!d.shifts[k.slice(0,10)]).concat(recPins);
+  S.algo=Object.assign(defaultAlgo(), d.algo||{});
   S.year=rec.year; S.month=rec.month;
   save();
   renderAll();
@@ -1919,12 +1994,21 @@ function autoPlot(){
   const patterns = S.rotation==="auto" ? ["3","2","mix"] : [S.rotation];
   const attemptsPer = S.rotation==="auto" ? 12 : 40;
   let best=null;
+  // shifts placed by hand are fixed (switch); without the switch this month's marks are let go
+  if(!A("keepPins")) S.pinned=S.pinned.filter(k=>!dates.includes(k.slice(0,10)));
+  const fixed={};
+  if(A("keepPins")) monthPins().forEach(k=>{ const ds=k.slice(0,10), p=k.slice(11), t=personShift(ds,p);
+    if(t && shiftById(t) && S.staff.includes(p) && !isOnLeave(p,ds)){ (fixed[ds]=fixed[ds]||{})[p]=t; } });
+  const nFixed=Object.values(fixed).reduce((a,o)=>a+Object.keys(o).length,0);
+  PLAN_CTX={hist:A("history")?monthHistory():null};
+  const pool=[];
 
   function tryPattern(pattern,attempts){
     let localBest=null;
     for(let a=0;a<attempts;a++){
-      const plan=buildOnePlan(dates,pattern,activeStarters);
+      const plan=buildOnePlan(dates,pattern,activeStarters,fixed);
       const score=scorePlan(plan,dates);
+      pool.push({plan,score,pattern});
       if(!localBest||score<localBest.score) localBest={plan,score};
     }
     return localBest;
@@ -1933,8 +2017,13 @@ function autoPlot(){
   // refine winning pattern with more attempts
   const refined=tryPattern(best.pattern,S.rotation==="auto"?40:20);
   if(refined.score<best.score) best={...refined,pattern:best.pattern};
+  // share weekends on the 20 best plans (cover and totals stay as they are), then keep the best (switch)
+  if(A("shareWeekends")){
+    pool.sort((a,b)=>a.score-b.score);
+    pool.slice(0,20).forEach(r=>{ const plan=shareWeekends(r.plan,dates,fixed), score=scorePlan(plan,dates); if(score<best.score) best={plan,score,pattern:r.pattern}; });
+  }
 
-  // commit best plan for this month only
+  // commit best plan for this month only (it already holds the shifts placed by hand)
   dates.forEach(ds=>{ delete S.shifts[ds]; });
   for(const ds in best.plan) S.shifts[ds]=best.plan[ds];
   save();
@@ -1944,7 +2033,9 @@ function autoPlot(){
   const startersNote=activeStarters.length? ` Compulsory starters (day 1): ${activeStarters.map(cs=>`${cs.person} → ${shiftById(cs.shiftType)?.name||cs.shiftType}`).join(", ")}.` : "";
   const leaveNote=skippedForLeave.length? ` ${skippedForLeave.map(cs=>cs.person).join(", ")} ${skippedForLeave.length===1?"was":"were"} on leave on the 1st — placed normally instead of forced.` : "";
   const carryNote=carryNotes.length? ` ${carryNotes.join(" ")}` : "";
-  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
+  const keptNote=nFixed?` Kept the ${nFixed} shift${nFixed===1?"":"s"} you placed by hand.`:"";
+  const histNote=PLAN_CTX.hist&&PLAN_CTX.hist.months.length?` Weekends${PLAN_CTX.hist.overnight?" and overnight shifts":""} also even out ${PLAN_CTX.hist.months.slice().reverse().join(", ")} (saved records).`:"";
+  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${keptNote}${histNote}${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
   renderAll();
 }
 function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return Math.random()<0.5?2:3; }
@@ -1972,7 +2063,7 @@ function seedCarryover(dates,pattern){
   return carry;
 }
 
-function buildOnePlan(dates,pattern,activeStarters){
+function buildOnePlan(dates,pattern,activeStarters,fixed){
   const plan={}; // dateStr -> {person:typeId}
   const runInfo=seedCarryover(dates,pattern); // person -> {type, daysLeft, blockLen, offLeft}
   const used={}; S.staff.forEach(p=>used[p]=0);
@@ -1991,6 +2082,20 @@ function buildOnePlan(dates,pattern,activeStarters){
     }
     return true;
   }
+
+  // shifts placed by hand are fixed: placed first, so they count toward cover and quota
+  fixed=fixed||{};
+  const fx=(ds,p)=>(fixed[ds]&&fixed[ds][p])||null;
+  for(const ds in fixed) for(const p in fixed[ds]) place(ds,p,fixed[ds][p]);
+  // a block of type t starting on ds must not run into a fixed shift: no other type inside it or the day after
+  // (no shift-type flip), nothing straight after it (too long), and the day before must not be another type
+  const blockFits=(p,ds,typeId)=>{
+    const L=pattern==="2"?2:3;
+    for(let k=0;k<=L;k++){ const f=fx(addDaysStr(ds,k),p); if(f && (f!==typeId||k===L)) return false; }
+    const prev=(plan[addDaysStr(ds,-1)]||{})[p];
+    return !(A("noFlip") && prev && prev!==typeId);
+  };
+  const hist=(PLAN_CTX&&PLAN_CTX.hist)||null;
 
   // Phase 0: compulsory starters — force each onto day 1 on their chosen shift (already validated as
   // leave-free and keep-apart-safe by autoPlot), then seed a normal block for them from there, exactly
@@ -2016,7 +2121,8 @@ function buildOnePlan(dates,pattern,activeStarters){
       S.staff.forEach(p=>{
         if(have>=min) return;
         const ri=runInfo[p];
-        if(ri.type===t.id && ri.daysLeft>0 && isFree(ds,p) && used[p]<quotas[p] && keepApartOK(ds,p,t.id,weekend)){
+        const nx=fx(addDaysStr(ds,1),p);
+        if(ri.type===t.id && ri.daysLeft>0 && isFree(ds,p) && used[p]<quotas[p] && keepApartOK(ds,p,t.id,weekend) && !(A("noFlip") && nx && nx!==t.id)){
           place(ds,p,t.id); ri.daysLeft--; have++;
           if(ri.daysLeft===0){ ri.offLeft=ri.blockLen; ri.type=null; restStartedToday.add(p); } // block finished -> start the matching "off" rest
         }
@@ -2028,14 +2134,17 @@ function buildOnePlan(dates,pattern,activeStarters){
           const ri=runInfo[p];
           if(ri.offLeft>0) return false; // still resting per the rotation pattern
           if(ri.type && ri.type!==t.id && ri.daysLeft>0) return false; // mid-block of another type
+          if(!blockFits(p,ds,t.id)) return false;                      // would collide with a shift placed by hand
           return true;
         });
         if(!candidates.length) break;
         candidates.sort((a,b)=>{
           // spare quota still drives who goes first; a small nudge toward whoever has fewer of THIS
           // shift type so far keeps each person's own Day/Night split from drifting too lopsided
-          const sa=(quotas[a]-used[a])+Math.random()*0.5-(typeUsed[a][t.id]||0)*0.15;
-          const sb=(quotas[b]-used[b])+Math.random()*0.5-(typeUsed[b][t.id]||0)*0.15;
+          // past months (switch): someone who did more overnight shifts than their share is steered off them now
+          const cN=x=>hist?(hist.carryN[x]||0)*(isOvernight(t)?-0.4:0.2):0;
+          const sa=(quotas[a]-used[a])+Math.random()*0.5-(typeUsed[a][t.id]||0)*0.15+cN(a);
+          const sb=(quotas[b]-used[b])+Math.random()*0.5-(typeUsed[b][t.id]||0)*0.15+cN(b);
           return sb-sa;
         });
         const p=candidates[0];
@@ -2123,7 +2232,7 @@ function buildOnePlan(dates,pattern,activeStarters){
       let done=false;
       for(const ds of dates){
         const typeId=plan[ds] && plan[ds][over];
-        if(!typeId) continue;
+        if(!typeId || fx(ds,over)) continue;                      // never move a shift placed by hand
         const t=shiftById(typeId);
         if(!t.flex) continue; // leave strict-coverage shifts alone
         if(!isBlockEdgeOrLone(over,ds,typeId)) continue;
@@ -2133,8 +2242,8 @@ function buildOnePlan(dates,pattern,activeStarters){
         const prevD=addDaysStr(ds,-1), nextD=addDaysStr(ds,1);
         const prevType=(plan[prevD]&&plan[prevD][under])||personShift(prevD,under);
         const nextType=(plan[nextD]&&plan[nextD][under])||personShift(nextD,under);
-        if(prevType && prevType!==typeId) continue;
-        if(nextType && nextType!==typeId) continue;
+        if(A("noFlip") && prevType && prevType!==typeId) continue;
+        if(A("noFlip") && nextType && nextType!==typeId) continue;
         let run=1;
         for(let k=1;k<4;k++){ const dd=addDaysStr(ds,-k); if((plan[dd]&&plan[dd][under])===typeId) run++; else break; }
         for(let k=1;k<4;k++){ const dd=addDaysStr(ds,k); if((plan[dd]&&plan[dd][under])===typeId) run++; else break; }
@@ -2168,7 +2277,7 @@ function scorePlan(plan,dates){
     dates.forEach(ds=>{
       const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
       const a=plan[ds]&&plan[ds][pair[0]], b=plan[ds]&&plan[ds][pair[1]];
-      if(a && a===b){ const t=shiftById(a); if(weekend||t.ka) score+=1000000; else score+=3000; }
+      if(a && a===b){ const t=shiftById(a); if(weekend||t.ka) score+=1000000; else if(A("apartWeekday")) score+=3000; }
     });
   });
   // penalize runs longer than the validation table's cap (3), and any shift-type flip between consecutive worked days
@@ -2178,7 +2287,7 @@ function scorePlan(plan,dates){
       const cur=(plan[ds]&&plan[ds][p])||null;
       if(cur){
         run=prevType?run+1:1;
-        if(prevType && cur!==prevType) score+=2000;
+        if(prevType && cur!==prevType && A("noFlip")) score+=2000;
         if(run>3) score+=4000;
       } else run=0;
       prevType=cur;
@@ -2214,7 +2323,125 @@ function scorePlan(plan,dates){
       score+=(Math.max(...counts)-Math.min(...counts))*40;
     });
   }
+  // weekends shared fairly (switch): Saturday/Sunday shifts against each person's target; kept below an even
+  // spread of totals (one step of that spread costs more than a typical weekend difference)
+  if(A("shareWeekends")){
+    const W=weekendCounts(plan,dates), t=weekendTargets(W,dates);
+    score+=S.staff.reduce((a,p)=>a+(W[p]-t[p])**2,0)*15;
+  }
+  // past months (switch): overnight shifts against each person's share, moved by what they did before
+  const hist=PLAN_CTX&&PLAN_CTX.hist;
+  if(hist&&hist.months.length&&hist.overnight){
+    const N={},T={}; S.staff.forEach(p=>{N[p]=0;T[p]=0});
+    dates.forEach(ds=>{ for(const p in (plan[ds]||{})){ if(!(p in T)) continue; T[p]++; if(isOvernight(shiftById(plan[ds][p]))) N[p]++; } });
+    const sN=S.staff.reduce((a,p)=>a+N[p],0), sT=S.staff.reduce((a,p)=>a+T[p],0)||1;
+    score+=S.staff.reduce((a,p)=>a+(N[p]-Math.max(0,sN*T[p]/sT-(hist.carryN[p]||0)))**2,0)*10;
+  }
   return Math.round(score);
+}
+
+/* ---------- fairness: weekends and past months ----------
+   Weekend shift = any shift on a Saturday or Sunday. Fair share by the weekend days each person is not on leave;
+   with the history switch, moved by how far above (+) or below (-) their share they were over the previous
+   HISTORY_MONTHS months (the most recently saved record of each month; only people on the current staff list).
+   Overnight shift types (end at or before start) are balanced across months the same way. */
+let PLAN_CTX=null;
+const HISTORY_MONTHS=3;
+function isOvernight(t){ return !!(t && t.start && t.end && toMinutes(t.end)<=toMinutes(t.start)); }
+function weekendCounts(plan,dates){
+  const W={}; S.staff.forEach(p=>W[p]=0);
+  dates.forEach(ds=>{ const [y,m,d]=ds.split("-").map(Number); if(!isWeekend(y,m-1,d)) return; for(const p in (plan[ds]||{})) if(p in W) W[p]++; });
+  return W;
+}
+function weekendTargets(W,dates){
+  const hist=(PLAN_CTX&&PLAN_CTX.hist)||null;
+  const wk=dates.filter(ds=>{ const [y,m,d]=ds.split("-").map(Number); return isWeekend(y,m-1,d); });
+  const av={}; S.staff.forEach(p=>av[p]=wk.filter(ds=>!isOnLeave(p,ds)).length);
+  const all=S.staff.reduce((a,p)=>a+W[p],0), avAll=S.staff.reduce((a,p)=>a+av[p],0)||1, t={};
+  S.staff.forEach(p=>t[p]=Math.max(0,all*av[p]/avAll-(hist?(hist.carryW[p]||0):0)));
+  return t;
+}
+function monthHistory(){
+  const H={months:[],W:{},N:{},carryW:{},carryN:{},overnight:S.shiftTypes.some(isOvernight)};
+  S.staff.forEach(p=>{H.W[p]=0;H.N[p]=0;H.carryW[p]=0;H.carryN[p]=0});
+  for(let k=1;k<=HISTORY_MONTHS;k++){
+    const t=new Date(Date.UTC(S.year,S.month-k,1)), yy=t.getUTCFullYear(), mm=t.getUTCMonth();
+    const recs=(RECORDS||[]).filter(r=>r&&r.data&&Number(r.year)===yy&&Number(r.month)===mm);
+    if(!recs.length) continue;
+    const d=recs.slice().sort((a,b)=>String(b.savedAt||"").localeCompare(String(a.savedAt||"")))[0].data;
+    const present=S.staff.filter(p=>(d.staff||[]).includes(p));
+    if(!present.length) continue;
+    H.months.push(`${MONTHS[mm].slice(0,3)} ${yy}`);
+    const types={}; (d.shiftTypes||[]).forEach(x=>types[x.id]=x);
+    const sh=d.shifts||{}, lv=d.leave||{}, n=daysInMonth(yy,mm), W={},N={},T={},av={};
+    present.forEach(p=>{W[p]=0;N[p]=0;T[p]=0;av[p]=0});
+    for(let day=1;day<=n;day++){
+      const ds=ymd(yy,mm,day), we=isWeekend(yy,mm,day);
+      present.forEach(p=>{ const v=(sh[ds]||{})[p]; if(we&&!(lv[p]||[]).includes(ds)) av[p]++; if(!v) return; T[p]++; if(we) W[p]++; if(isOvernight(types[v])) N[p]++; });
+    }
+    const sum=o=>present.reduce((a,p)=>a+o[p],0), sW=sum(W), sN=sum(N), sT=sum(T)||1, sAv=sum(av)||1;
+    present.forEach(p=>{ H.W[p]+=W[p]; H.N[p]+=N[p]; H.carryW[p]+=W[p]-sW*av[p]/sAv; H.carryN[p]+=N[p]-sN*T[p]/sT; });
+  }
+  return H;
+}
+/* Share weekends on a finished plan. Two people swap their whole schedules over a stretch of days. Every day keeps
+   the same shift types (cover unchanged); the stretch holds the same number of shifts for both (totals unchanged).
+   Kept only when weekend shifts get closer to each person's target and nothing gets worse for either person:
+   no new shift-type change on consecutive days, run over 3, rest gap under 2 days or lone day; no new keep-apart
+   clash; no leave day worked; no shift placed by hand moved; every shift type kept (if required) and the
+   personal mix of types within 4 (or no worse than before). */
+function shareWeekends(plan,dates,fixed){
+  const n=dates.length, P=S.staff, ids=S.shiftTypes.map(t=>t.id);
+  const g={}; P.forEach(p=>g[p]=dates.map(ds=>(plan[ds]&&plan[ds][p])||""));
+  const isWk=dates.map(ds=>{ const [y,m,d]=ds.split("-").map(Number); return isWeekend(y,m-1,d); });
+  const before=p=>personShift(addDaysStr(dates[0],-1),p)||"";
+  const fixedAt=(p,i)=>!!(fixed&&fixed[dates[i]]&&fixed[dates[i]][p]);
+  const faults=p=>{
+    const t=g[p]; let flips=0,long=0,short=0,lone=0,prev=before(p),run=prev?1:0,gap=prev?0:99,started=!!prev;
+    for(let i=0;i<n;i++){
+      const v=t[i];
+      if(v){ if(prev&&prev!==v&&A("noFlip")) flips++; if(prev) run++; else { if(started&&gap<2) short++; run=1; } if(run>3) long++; gap=0; started=true; }
+      else { if(prev&&run===1) lone++; gap++; }
+      prev=v;
+    }
+    return {flips,long,short,lone};
+  };
+  const worse=(a,b)=>b.flips>a.flips||b.long>a.long||b.short>a.short||b.lone>a.lone;
+  const clashes=p=>{ let c=0; normalizedPairs().forEach(pr=>{ if(!pr.includes(p)) return; const q=pr[0]===p?pr[1]:pr[0]; if(!g[q]) return;
+    for(let i=0;i<n;i++) if(g[p][i]&&g[p][i]===g[q][i]) c+=(isWk[i]||shiftById(g[p][i]).ka)?100:(A("apartWeekday")?1:0); }); return c; };
+  const mix=p=>ids.map(id=>g[p].filter(v=>v===id).length);
+  const mixOK=(p,was)=>{ const m=mix(p), tot=m.reduce((a,b)=>a+b,0);
+    if(S.requireAll&&tot>0&&m.some(x=>x===0)&&was.every(x=>x>0)) return false;
+    return (Math.max(...m)-Math.min(...m))<=Math.max(4,Math.max(...was)-Math.min(...was)); };
+  const wk=p=>g[p].reduce((s,v,i)=>s+(v&&isWk[i]?1:0),0);
+  const W={}; P.forEach(p=>W[p]=wk(p));
+  const target=weekendTargets(W,dates);
+  const dev=()=>P.reduce((s,p)=>s+(wk(p)-target[p])**2,0);
+  for(let round=0;round<40;round++){
+    const over=P.filter(p=>wk(p)-target[p]>=1), under=P.filter(p=>target[p]-wk(p)>=1);
+    let best=null; const d0=dev();
+    for(const X of over) for(const Y of under){
+      const fX=faults(X),fY=faults(Y),cX=clashes(X),cY=clashes(Y),mX=mix(X),mY=mix(Y);
+      for(let a=0;a<n;a++){
+        let cx=0,cy=0,wx=0,wy=0;
+        for(let b=a;b<n;b++){
+          if(fixedAt(X,b)||fixedAt(Y,b)||(g[X][b]&&isOnLeave(Y,dates[b]))||(g[Y][b]&&isOnLeave(X,dates[b]))) break;
+          if(g[X][b])cx++; if(g[Y][b])cy++;
+          if(isWk[b]){ if(g[X][b])wx++; if(g[Y][b])wy++; }
+          if(cx!==cy||wx<=wy) continue;
+          for(let i=a;i<=b;i++){ const t=g[X][i]; g[X][i]=g[Y][i]; g[Y][i]=t; }
+          const d1=dev();
+          if(d1<d0-0.01&&(!best||d1<best.d)&&!worse(fX,faults(X))&&!worse(fY,faults(Y))&&clashes(X)<=cX&&clashes(Y)<=cY&&mixOK(X,mX)&&mixOK(Y,mY)) best={X,Y,a,b,d:d1};
+          for(let i=a;i<=b;i++){ const t=g[X][i]; g[X][i]=g[Y][i]; g[Y][i]=t; }
+        }
+      }
+    }
+    if(!best) break;
+    for(let i=best.a;i<=best.b;i++){ const t=g[best.X][i]; g[best.X][i]=g[best.Y][i]; g[best.Y][i]=t; }
+  }
+  const out={}; dates.forEach((ds,i)=>P.forEach(p=>{ if(g[p][i]){ (out[ds]=out[ds]||{})[p]=g[p][i]; } }));
+  for(const ds in plan) for(const p in plan[ds]) if(!P.includes(p)){ (out[ds]=out[ds]||{})[p]=plan[ds][p]; }   // anyone not on the staff list stays as is
+  return out;
 }
 $("btnAuto").addEventListener("click",()=>{
   if(!S.staff.length){ setStatus("Add staff first."); return; }
@@ -2387,17 +2614,44 @@ $("emailSend").addEventListener("click", async ()=>{
 });
 
 // ---------- pages (tabs), Plot / Leave / Starters, month arrows, More menu, theme ----------
-const PAGES=["roster","staff","rules","records","email"];
+const PAGES=["roster","staff","rules","records","email","algorithm"];
+let algoOpen=false;               // the Algorithm tab needs the admin password each time it is opened
+async function adminCall(pw){
+  const r=await fetch("api/admin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+  let b={}; try{ b=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(b.error||("server responded "+r.status));
+  return b;
+}
+async function openAlgorithm(){
+  const ok=await mxAskPassword({title:"Algorithm",message:"Enter the admin password to change how Auto Plot plans.",call:adminCall});
+  if(ok){ algoOpen=true; showPage("algorithm"); window.scrollTo(0,0); }
+  else if(document.documentElement.getAttribute("data-page")==="algorithm") showPage("roster");
+}
 function showPage(p){
   if(!PAGES.includes(p)) p="roster";
+  if(p==="algorithm"&&!algoOpen){ openAlgorithm(); return; }
+  if(p!=="algorithm") algoOpen=false;     // leaving the Algorithm tab locks it again
   document.documentElement.setAttribute("data-page",p);
   document.querySelectorAll(".tab").forEach(b=>{ if(b.dataset.nav===p) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
-  try{ localStorage.setItem("schedulemaster_page",p); }catch(e){}
+  if(p!=="algorithm") try{ localStorage.setItem("schedulemaster_page",p); }catch(e){}   // a reload never lands on the locked tab
   if(location.hash!=="#"+p) history.replaceState(null,"","#"+p);
 }
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{ showPage(b.dataset.nav); window.scrollTo(0,0); }));
 window.addEventListener("hashchange",()=>{ const p=location.hash.slice(1); if(PAGES.includes(p)) showPage(p); });
 showPage(document.documentElement.getAttribute("data-page"));
+function renderAlgo(){ document.querySelectorAll("[data-algo]").forEach(e=>{ e.checked=A(e.dataset.algo); }); }
+document.querySelectorAll("[data-algo]").forEach(e=>e.addEventListener("change",()=>{
+  S.algo=Object.assign(defaultAlgo(),S.algo||{}); S.algo[e.dataset.algo]=e.checked; save(); renderAll();
+  setStatus(`${e.closest(".sw").querySelector("b").textContent}: ${e.checked?"on":"off"}.`);
+}));
+$("btnAutoFresh").addEventListener("click",async()=>{
+  const mine=monthPins();
+  if(mine.length&&!await askConfirm({title:"Plan this month from scratch?",confirmText:"Plan from scratch",
+    message:`Auto Plot normally keeps the ${mine.length} shift${mine.length===1?"":"s"} you placed by hand. From scratch, ${mine.length===1?"it is":"they are"} treated like any other shift and may be moved or removed.`})) return;
+  S.pinned=S.pinned.filter(k=>!mine.includes(k)); save();
+  if(!S.staff.length){ setStatus("Add staff first."); return; }
+  setStatus("Planning…"); setTimeout(autoPlot,10);
+});
 function showTool(t){
   document.querySelectorAll(".toolTabs [data-tool]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tool===t)));
   document.querySelectorAll(".tools [data-pane]").forEach(p=>{ p.hidden=p.dataset.pane!==t; });
@@ -2446,14 +2700,15 @@ async function mxCall(body){
   if(!r.ok){ const err=new Error(b.error||("server responded "+r.status)); err.locked=!!b.locked; throw err; }
   return b;
 }
-function mxAskPassword(){ return new Promise(resolve=>{
+function mxAskPassword(o){ o=o||{title:"Mail server",message:"Enter the admin password to view and change the mail relay settings.",call:pw=>mxCall({action:"unlock",password:pw})}; return new Promise(resolve=>{
   const back=document.createElement("div"), prev=document.activeElement; back.className="pwBack";
-  back.innerHTML='<form class="dlg" role="dialog" aria-modal="true" aria-labelledby="mxPwT"><h3 id="mxPwT">Mail server</h3>'
-    +'<p class="dlg-msg" style="margin-top:8px">Enter the admin password to view and change the mail relay settings.</p>'
+  back.innerHTML='<form class="dlg" role="dialog" aria-modal="true" aria-labelledby="mxPwT"><h3 id="mxPwT"></h3>'
+    +'<p class="dlg-msg" style="margin-top:8px"></p>'
     +'<input id="mxPw" type="password" autocomplete="current-password" aria-label="Admin password">'
     +'<div class="pwErr" hidden></div>'
     +'<div class="dlg-actions"><button type="button" class="pwNo">Cancel</button><button type="submit" class="primary pwGo">Unlock</button></div></form>';
   const form=back.firstChild, pw=back.querySelector("#mxPw"), err=back.querySelector(".pwErr"), go=back.querySelector(".pwGo");
+  back.querySelector("h3").textContent=o.title; back.querySelector(".dlg-msg").textContent=o.message;
   const onKey=e=>{ if(e.key==="Escape"){ e.preventDefault(); close(null); } };
   function close(v){ document.removeEventListener("keydown",onKey,true); back.remove(); if(!v && prev && prev.focus) prev.focus(); resolve(v); }
   back.querySelector(".pwNo").onclick=()=>close(null);
@@ -2462,7 +2717,7 @@ function mxAskPassword(){ return new Promise(resolve=>{
   form.addEventListener("submit",async e=>{
     e.preventDefault(); if(!pw.value) return pw.focus();
     go.disabled=true; go.textContent="Checking…"; err.hidden=true;
-    try{ close(await mxCall({action:"unlock",password:pw.value})); return; }
+    try{ close(await o.call(pw.value)); return; }
     catch(x){ err.textContent=x.message==="Failed to fetch"?"Could not reach the server.":x.message; err.hidden=false; }
     go.disabled=false; go.textContent="Unlock"; pw.select();
   });
