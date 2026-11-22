@@ -73,7 +73,7 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
 
 ### Finding your way around
 
-- **Top bar**: the month (‹ › arrows, or pick a month and year), **Auto Plot**, a **More** menu (Print / PDF, the two printout options, Clear this month, Reset all data in this browser), a light/dark switch, **Mail server** and **Log out**.
+- **Top bar**: the month (‹ › arrows, or click it to pick a month and year; the app always opens on the current month), **Auto Plot**, a **More** menu (Print / PDF, the two printout options, Clear this month, Reset all data in this browser), a light/dark switch, **Mail server** and **Log out**.
 - **Tabs**: **Roster** (the calendar, a side panel with **Plot**, **Leave** and **Starters** tabs, and the Workload table with the coverage check), **Staff** (the list, Save / Reload, Export / Import `staff.json`), **Shifts & rules** (shift types, expected shifts, rest, rotation, keep-apart pairs, calendar colours), **Records** and **Email**. The page you're on is kept in the address (`#staff`, …) and comes back after a reload.
 - **Light / dark**: follows the device until you use the switch; the choice is saved in this browser. Dark mode is screen-only.
 
@@ -131,7 +131,7 @@ The **Calendar colours** cards on the *Shifts & rules* page switch between 10 co
 13. **Fair across months** — weekends and overnight shift types (ending at or before they start) are evened out using the last 3 months of saved records (the latest record of each month). Workload shows the past counts beside this month's.
 
 ### Algorithm tab (rule switches)
-The **Algorithm** tab, behind the admin password, turns rules 2, 5, 6, 9, 11, 12 and 13 on or off (rule 5 has two switches: keep-apart pairs at all, and the ordinary-weekday part). Everything is on by default. It locks again when you leave the tab, and a reload never lands on it. The switches are saved in the browser with the rest of the planner and inside each saved record.
+The **Algorithm** tab, behind the admin password, turns rules 2, 5, 6, 9, 11, 12 and 13 on or off (rule 5 has two switches: keep-apart pairs at all, and the ordinary-weekday part). It also has **Same roster every time**: Auto Plot gives the same roster for the same staff, leave and settings, and **More › Try another** shows alternatives (off: every run is different, and Try another is hidden). Everything is on by default. It locks again when you leave the tab, and a reload never lands on it. The switches are saved in the browser with the rest of the planner and inside each saved record.
 
 ---
 
@@ -307,7 +307,7 @@ Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so
 
 ## 7. Printing
 
-**More › Print / PDF** prints the Roster page as a rota ledger on landscape A4: the month in serif with "Duty roster" under it and "Schedule Master" on the right, a heavy rule, then one ruled line per week with the ISO week number in the margin (weeks run Monday to Sunday), weekends shaded, and each person's shift as a tinted chip. The Workload table (and, if ticked, the coverage check) follows on its own page.
+**More › Print / PDF** prints the Roster page as a rota ledger (choose the paper size and layout in the print dialog; it fits portrait or landscape): the month in serif with "Duty roster" under it and "Schedule Master" on the right, a heavy rule, then one ruled line per week with the ISO week number in the margin (weeks run Monday to Sunday), weekends shaded, and each person's shift as a tinted chip. The Workload table (and, if ticked, the coverage check) follows on its own page.
 
 - **One page per month**: the row height comes from the page height and the number of weeks, so 4, 5 and 6-week months all fill one page. The calendar only shrinks (via CSS `zoom`, never below 55%) when a day holds more shifts than a row can show.
 - **Printout options** (More menu): *Coverage counts on each day* (the `Day 2/2` line) and *Coverage check*.
@@ -320,7 +320,7 @@ Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so
 
 The **Records** page lets you keep a permanent, labeled history of past rosters — entirely separate from the live `S` state everything else in the app reads and writes. Saving, viewing, and deleting a record never changes what's currently plotted, and plotting or editing the live roster never changes a saved record.
 
-- **Save**: typing a label (optional — it defaults to "Month Year") and clicking "Save this month" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list.
+- **Save**: on the Roster, beside the month title, typing a label (optional — it defaults to "Month Year") and clicking "Save this month" takes a full snapshot of that month — staff, shift types, keep-apart pairs, leave, that month's shifts, and the global settings (expected shifts, min rest, rotation, and the two checkboxes) — and adds it to the saved list. If that month is already saved, it asks first: **Replace** the latest record of that month, **Save as new**, or Cancel.
 - **View**: each record shows a one-line summary (staff/shift-type/placed-shift counts) plus a "View" button that expands the complete saved snapshot as raw JSON, so you can always refer back to exactly what was saved.
 - **Load (Plot)**: puts a record back on the calendar exactly as it was saved — its staff list, shift types, keep-apart pairs, settings, and that month's shifts and leave — so you can look at an old roster at any time. Leave in every *other* month is left as it is now. The record itself is never changed by loading it.
 - **Staff who have since left**: removing someone from the staff list never touches saved records, so loading an old record still shows that person's shifts and leave for that month, and lists them for that view; the status line names anyone who isn't on your current staff list. While a record's staff list is on screen, **Reload** takes you back to your current list, and **Save** asks first — naming who would be added back to or removed from `staff.json` — before writing the record's list there.

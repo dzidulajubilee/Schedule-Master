@@ -165,9 +165,25 @@ label:has(> input[type=checkbox]){cursor:pointer;}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-size:18px;font-weight:600;margin-right:16px;white-space:nowrap;}
 .brand svg{width:20px;height:20px;color:var(--accent);flex:none;}
 .monthNav{display:flex;align-items:center;gap:2px;}
-.monthNav select{border-color:transparent;font-size:15px;font-weight:500;background:transparent;padding:0 6px;}
-.monthNav input{width:72px;border-color:transparent;font-size:15px;font-weight:500;background:transparent;padding:0 6px;}
-.monthNav select:hover,.monthNav input:hover{border-color:var(--border2);}
+/* month picker: a button showing the period, and a panel with a year stepper and the 12 months.
+   #selMonth and #selYear stay in the page (hidden) and are kept in step with S. */
+.period{position:relative;}
+.periodBtn{border-color:transparent;background:transparent;font-size:15px;font-weight:500;gap:6px;padding:0 8px;min-width:152px;justify-content:space-between;font-variant-numeric:tabular-nums;}
+.periodBtn .i{width:14px;height:14px;color:var(--muted);transition:transform .15s var(--ease);}
+.periodBtn[aria-expanded=true]{background:var(--raised);}
+.periodBtn[aria-expanded=true] .i{transform:rotate(180deg);}
+.periodPop{position:absolute;left:0;top:calc(100% + 6px);width:232px;background:var(--panel);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:6px;z-index:30;
+  opacity:0;transform:translateY(-4px);visibility:hidden;transition:opacity .15s var(--ease),transform .15s var(--ease),visibility 0s linear .15s;}
+.periodPop.open{opacity:1;transform:none;visibility:visible;transition:opacity .15s var(--ease),transform .15s var(--ease);}
+.periodYear{display:flex;align-items:center;justify-content:space-between;padding:0 0 6px;margin-bottom:6px;border-bottom:1px solid var(--border);}
+.periodYear b{font-family:var(--serif);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums;}
+.periodYear button{width:28px;height:28px;padding:0;border:0;background:transparent;color:var(--t2);border-radius:6px;}
+.periodYear button:hover{background:var(--raised);color:var(--text);}
+.periodGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;}
+.periodGrid button{position:relative;height:36px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--t2);font-weight:400;justify-content:center;}
+.periodGrid button:hover{background:var(--raised);color:var(--text);}
+.periodGrid button[aria-current=true]{background:var(--accent);color:var(--accent-ink);font-weight:500;}
+.periodGrid button.now::after{content:"";position:absolute;left:50%;bottom:5px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:currentColor;opacity:.6;}   /* this month */
 .spacer{flex:1;}
 details.menu{position:relative;}
 details.menu>summary{list-style:none;}
@@ -222,6 +238,10 @@ details.menu[open]>summary{background:var(--raised);}
 
 /* ---------- roster ---------- */
 .rosterHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
+.rhRight{display:flex;flex-direction:column;align-items:flex-end;gap:12px;}
+.saveRow{display:flex;gap:8px;}
+.saveRow input{width:200px;}
+.saveRow button{flex:none;}
 .rosterHead h1{font-family:var(--serif);font-size:34px;font-weight:500;letter-spacing:-.01em;line-height:1.1;margin:0;border:0;padding:0;}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--t2);}
 .legend-pill{display:inline-flex;align-items:center;gap:6px;}
@@ -405,9 +425,9 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
 /* ---------- print: the roster only, always the light version of the chosen scheme ----------
    A rota ledger, like the emailed PDF: the month in serif over a heavy rule, one ruled line per week with
    the week number in the margin, weekends shaded, each person's shift as a tinted chip. */
-@page{ size: landscape; margin: 10mm; }
+@page{ margin: 10mm; }   /* no fixed size: the print dialog keeps Paper size and Layout */
 @media print{
-  .top,.tools,.status,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
+  .top,.tools,.status,.saveRow,.histNote,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
   .page[data-page=roster]{display:block!important;}
   .printOnly{display:block!important;}
   #wlMonth{display:inline!important;}
@@ -427,7 +447,7 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
   .legend{gap:14px;font-size:9.5px;color:#57524a;justify-content:flex-end;}
   .legend-pill .legend-time{font-size:8.5px;color:#736e64;}
   /* the ledger: a week-number margin, then seven columns; weeks are ruled lines, not boxes */
-  #weekdayRow,.calweek{display:grid;grid-template-columns:40px repeat(7,1fr);gap:0;}
+  #weekdayRow,.calweek{display:grid;grid-template-columns:40px repeat(7,minmax(0,1fr));gap:0;}   /* fits any paper size or layout */
   #calGrid{gap:0;}
   .wkno{font-family:var(--serif);font-size:10px;color:#736e64;padding:5px 0 0;border-top:0.6pt solid #d9d5cc;}
   #weekdayRow .wkno{border-top:0;}
@@ -466,7 +486,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
     <div class="dlg-head"><div class="dlg-icon" aria-hidden="true">?</div><h3 id="smDialogTitle"></h3></div>
     <p class="dlg-msg" id="smDialogMsg"></p>
     <div class="dlg-details" id="smDialogDetails"></div>
-    <div class="dlg-actions"><button type="button" class="dlg-cancel">Cancel</button><button type="button" class="primary dlg-ok">OK</button></div>
+    <div class="dlg-actions"><button type="button" class="dlg-cancel">Cancel</button><button type="button" class="dlg-alt" hidden></button><button type="button" class="primary dlg-ok">OK</button></div>
   </div>
 </div>
 
@@ -490,8 +510,15 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
   <div class="brand"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.75 7.75h14.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="10" width="4" height="2.5" rx=".8" fill="currentColor"/><rect x="10.5" y="13" width="4" height="2.5" rx=".8" fill="currentColor"/></svg><span>Schedule Master</span></div>
   <div class="monthNav">
     <button type="button" class="quiet icon" id="prevMonth" aria-label="Previous month" title="Previous month"><svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
-    <select id="selMonth" aria-label="Month"></select>
-    <input type="number" id="selYear" aria-label="Year">
+    <div class="period" id="period">
+      <button type="button" class="periodBtn" id="periodBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="periodPop" title="Pick a month"><span id="periodLabel">—</span><svg class="i" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="periodPop" id="periodPop" role="dialog" aria-label="Pick a month">
+        <div class="periodYear"><button type="button" id="periodPrevY" aria-label="Previous year" title="Previous year"><svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button><b id="periodY"></b><button type="button" id="periodNextY" aria-label="Next year" title="Next year"><svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button></div>
+        <div class="periodGrid" id="periodGrid"></div>
+      </div>
+    </div>
+    <select id="selMonth" aria-label="Month" hidden></select>
+    <input type="number" id="selYear" aria-label="Year" hidden>
     <button type="button" class="quiet icon" id="nextMonth" aria-label="Next month" title="Next month"><svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
   </div>
   <div class="spacer"></div>
@@ -504,6 +531,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
       <label class="check"><input type="checkbox" id="showCounts"> Coverage counts on each day</label>
       <label class="check"><input type="checkbox" id="printCoverage"> Coverage check</label>
       <hr>
+      <button id="btnTryAnother" type="button" title="A different roster from the same staff, leave and settings">Try another</button>
       <button id="btnAutoFresh" type="button">Auto Plot from scratch</button>
       <button id="btnClear" type="button">Clear this month</button>
       <button id="btnResetAll" type="button" title="Wipes shifts, leave, staff, and settings stored in THIS browser">Reset all data in this browser</button>
@@ -528,7 +556,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
 
 <!-- ===== Roster ===== -->
 <section class="page" data-page="roster">
-  <div class="rosterHead"><div class="rhLeft"><h1 id="calTitle">—</h1><div class="eyebrow printOnly">Duty roster</div></div><div class="rhRight"><div class="printBrand printOnly">Schedule Master</div><div class="legend" id="legend"></div></div></div>
+  <div class="rosterHead"><div class="rhLeft"><h1 id="calTitle">—</h1><div class="eyebrow printOnly">Duty roster</div></div><div class="rhRight"><div class="printBrand printOnly">Schedule Master</div><div class="saveRow"><input type="text" id="recordLabel" placeholder="Label, optional" autocomplete="off" aria-label="Record label, optional"><button id="recordSave" type="button" title="Save this month's staff, shifts, leave and settings as a record">Save this month</button></div><div class="legend" id="legend"></div></div></div>
   <div class="roster">
     <div>
       <div class="calwrap" id="calwrap">
@@ -650,7 +678,6 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
 <section class="page" data-page="records" id="recordsPanel">
   <div class="pageHead"><div><h1>Records</h1><p>Snapshots of a month, with its staff, shift types, keep-apart pairs, leave, shifts and settings, kept in records.json</p></div></div>
   <div class="card narrow">
-    <div class="row" style="margin-top:0"><input type="text" id="recordLabel" placeholder="Label, optional" autocomplete="off"><button id="recordSave" class="primary">Save this month</button></div>
     <div id="recordsList"></div>
     <div class="btnRow">
       <button id="recordsExport" class="quiet">Export records.json</button>
@@ -698,6 +725,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
       <h3>Fairness</h3>
       <label class="sw"><input type="checkbox" data-algo="keepPins"><span><b>Keep shifts placed by hand</b><small>Auto Plot plans around shifts placed with the Plot tool</small></span></label>
       <label class="sw"><input type="checkbox" data-algo="shareWeekends"><span><b>Share weekends fairly</b><small>Saturday and Sunday shifts, by the weekend days each person is available</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="sameRoster"><span><b>Same roster every time</b><small>Auto Plot gives the same result for the same staff, leave and settings. More → Try another shows alternatives. Off: every run is different</small></span></label>
       <label class="sw"><input type="checkbox" data-algo="history"><span><b>Even out weekends and overnight shifts across months</b><small>Uses the last 3 months of saved records</small></span></label>
     </div>
     </div>
@@ -749,7 +777,7 @@ const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").rep
 // shows a red action button and starts keyboard focus on Cancel, so a stray Enter can't confirm it.
 // All text is set with textContent, so names/labels are never interpreted as HTML.
 let closeOpenDialog=null;
-function askConfirm({title, message="", details=[], confirmText="OK", danger=false, cancelText="Cancel"}){
+function askConfirm({title, message="", details=[], confirmText="OK", danger=false, cancelText="Cancel", altText=null}){
   if(closeOpenDialog) closeOpenDialog(false); // only one dialog at a time; an older one counts as cancelled
   const box=$("smDialog");
   const okBtn=box.querySelector(".dlg-ok"), cancelBtn=box.querySelector(".dlg-cancel");
@@ -763,6 +791,7 @@ function askConfirm({title, message="", details=[], confirmText="OK", danger=fal
     b.textContent=label+": "; row.appendChild(b); row.appendChild(document.createTextNode(String(value))); det.appendChild(row);
   });
   okBtn.textContent=confirmText;
+  const altBtn=box.querySelector(".dlg-alt"); altBtn.hidden=!altText; if(altText) altBtn.textContent=altText;   // optional third choice, answers "alt"
   cancelBtn.hidden=(cancelText===null); // cancelText:null = information-only notice with a single button
   if(cancelText!==null) cancelBtn.textContent=cancelText;
   const returnFocus=document.activeElement;
@@ -771,7 +800,7 @@ function askConfirm({title, message="", details=[], confirmText="OK", danger=fal
   return new Promise(resolve=>{
     const finish=result=>{
       box.classList.remove("open");
-      okBtn.onclick=cancelBtn.onclick=box.onmousedown=box.onkeydown=null;
+      okBtn.onclick=cancelBtn.onclick=altBtn.onclick=box.onmousedown=box.onkeydown=null;
       closeOpenDialog=null;
       if(returnFocus && document.contains(returnFocus) && returnFocus.focus) returnFocus.focus();
       resolve(result);
@@ -779,11 +808,13 @@ function askConfirm({title, message="", details=[], confirmText="OK", danger=fal
     closeOpenDialog=finish;
     okBtn.onclick=()=>finish(true);
     cancelBtn.onclick=()=>finish(false);
+    altBtn.onclick=()=>finish("alt");
     box.onmousedown=e=>{ if(e.target===box) finish(false); }; // click on the dimmed backdrop
     box.onkeydown=e=>{
       if(e.key==="Escape"){ e.preventDefault(); finish(false); }
       else if(e.key==="Tab"){ // keep keyboard focus inside the dialog
-        e.preventDefault(); (document.activeElement===okBtn && !cancelBtn.hidden?cancelBtn:okBtn).focus();
+        e.preventDefault(); const bs=[cancelBtn,altBtn,okBtn].filter(b=>!b.hidden), i=bs.indexOf(document.activeElement);
+        bs[((i<0?0:i)+(e.shiftKey?bs.length-1:1))%bs.length].focus();
       }
     };
   });
@@ -910,11 +941,13 @@ function defaultState(){
   };
 }
 function defaultAlgo(){
-  return {keepPins:true, shareWeekends:true, history:true, noFlip:true, keepApart:true, apartWeekday:true, quotaCap:true, bridgeLeave:true};
+  return {keepPins:true, shareWeekends:true, history:true, noFlip:true, keepApart:true, apartWeekday:true, quotaCap:true, bridgeLeave:true, sameRoster:true};
 }
 /* Is a rule switch on? (All on unless turned off on the Algorithm tab.) */
 function A(k){ return !(S.algo && S.algo[k]===false); }
 let S=load();
+{ const n=new Date();   // always open on the current month (starters are per month, so they go if the month moved)
+  if(S.year!==n.getFullYear()||S.month!==n.getMonth()){ S.year=n.getFullYear(); S.month=n.getMonth(); S.compulsoryStarters=[]; } }
 function load(){
   try{
     let raw=localStorage.getItem("schedulemaster_state");
@@ -1403,7 +1436,7 @@ function canPlaceShift(person,dateStr,typeId,forManual){
 // ---------- calendar / month controls ----------
 function fillMonthYear(){
   $("selMonth").innerHTML=MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join("");
-  $("selMonth").value=S.month; $("selYear").value=S.year;
+  $("selMonth").value=S.month; $("selYear").value=S.year; syncPeriod();
 }
 $("selMonth").addEventListener("change",()=>{ S.month=Number($("selMonth").value); mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll(); });
 $("selYear").addEventListener("change",()=>{ S.year=Number($("selYear").value)||S.year; mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll(); });
@@ -1518,7 +1551,7 @@ function longestRun(person){
 function renderWorkload(){
   const table=$("workloadTable"); 
   const hist=A("history")?monthHistory():null, hasH=!!(hist&&hist.months.length);
-  const hNote=n=>hasH?` <span class="small">(${n} in ${hist.months.length===1?"last month":"last "+hist.months.length+" months"})</span>`:"";
+  const hNote=n=>hasH?` <span class="small histNote">(${n} in ${hist.months.length===1?"last month":"last "+hist.months.length+" months"})</span>`:"";
   let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th title="Shifts on a Saturday or Sunday">Weekends</th><th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
   let body="";
   S.staff.forEach(person=>{
@@ -1599,7 +1632,7 @@ function renderCoverage(){
 }
 
 function renderAll(){
-  prunePins(); renderAlgo(); renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
+  prunePins(); renderAlgo(); syncTryAnother(); renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
 }
@@ -1881,6 +1914,23 @@ function renderRecords(){
 }
 $("recordSave").addEventListener("click", async ()=>{
   const rec=snapshotNow($("recordLabel").value);
+  // this month already saved: replace the latest record of it, or keep it and save another
+  const same=RECORDS.filter(r=>r&&Number(r.year)===rec.year&&Number(r.month)===rec.month).sort((a,b)=>String(b.savedAt||"").localeCompare(String(a.savedAt||"")));
+  if(same.length){
+    const old=same[0], when=new Date(old.savedAt), whenTxt=isNaN(when)?"unknown time":when.toLocaleString(undefined,{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit"});
+    const a=await askConfirm({title:`${MONTHS[rec.month]} ${rec.year} is already saved`, danger:true, confirmText:"Replace", altText:"Save as new",
+      message:"Replace the saved record with what is on screen now, or keep it and save this as a new record? Replace can't be undone.",
+      details:[["Saved",`"${old.label}", ${whenTxt} · ${recordSummary(old)}`],["Now on screen",recordSummary(rec)],
+        ["Note",same.length>1?`${same.length} records of this month are saved; Replace changes the latest one`:""]]});
+    if(!a) return;
+    if(a===true){
+      const label=$("recordLabel").value.trim()?rec.label:old.label;
+      if(!await commitRecords(RECORDS.map(r=>r.id===old.id?{...rec,id:old.id,label}:r))) return;
+      $("recordLabel").value="";
+      setStatus(`Replaced record "${label}" (${recordSummary(rec)}).`);
+      return;
+    }
+  }
   if(!await commitRecords([...RECORDS, rec])) return;
   $("recordLabel").value="";
   setStatus(`Saved record "${rec.label}" (${recordSummary(rec)}).`);
@@ -1979,7 +2029,20 @@ function csCarryoverNotes(activeStarters,day1){
 }
 
 // ---------- Auto Plot ----------
-function autoPlot(){
+/* ---------- same roster every time (switch) ----------
+   Auto Plot's random choices come from a generator seeded by everything it plans from (month, staff, leave, settings,
+   the end of last month, shifts placed by hand, switches, past months), so the same inputs give the same roster.
+   Try another adds 1 to the variant for a different roster from the same inputs; plain Auto Plot goes back to 0.
+   Switch off: plain Math.random, every run different. */
+let rnd=Math.random, planVariant=0;
+function seededRandom(text){
+  let h=2166136261; for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); }
+  let s=h>>>0;
+  return ()=>{ s=(s+0x6D2B79F5)>>>0; let t=s; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296; };
+}
+function syncTryAnother(){ $("btnTryAnother").hidden=!A("sameRoster"); }
+function autoPlot(variant){
+  variant=Number.isInteger(variant)?variant:0;
   const {errors}=compulsoryStartersCheck();
   if(errors.length){ setStatus(`Can't run Auto Plot — fix Compulsory Starters (7) first: ${errors.join(" ")}`); return; }
 
@@ -2001,6 +2064,13 @@ function autoPlot(){
     if(t && shiftById(t) && S.staff.includes(p) && !isOnLeave(p,ds)){ (fixed[ds]=fixed[ds]||{})[p]=t; } });
   const nFixed=Object.values(fixed).reduce((a,o)=>a+Object.keys(o).length,0);
   PLAN_CTX={hist:A("history")?monthHistory():null};
+  planVariant=A("sameRoster")?variant:0;
+  if(A("sameRoster")){
+    const before={}; for(let k=1;k<=7;k++){ const ds=addDaysStr(dates[0],-k); if(S.shifts[ds]) before[ds]=S.shifts[ds]; }
+    const lv={}; S.staff.forEach(p=>{ lv[p]=(S.leave[p]||[]).filter(d=>dates.includes(d)).sort(); });
+    rnd=seededRandom(JSON.stringify([dates,S.staff,lv,S.shiftTypes,S.keepApart,S.expShifts,S.restHrs,S.rotation,S.requireAll,S.weekendLeaveNoQuota,
+      activeStarters,before,fixed,S.algo,PLAN_CTX.hist&&[PLAN_CTX.hist.carryW,PLAN_CTX.hist.carryN],planVariant]));
+  } else rnd=Math.random;
   const pool=[];
 
   function tryPattern(pattern,attempts){
@@ -2035,10 +2105,11 @@ function autoPlot(){
   const carryNote=carryNotes.length? ` ${carryNotes.join(" ")}` : "";
   const keptNote=nFixed?` Kept the ${nFixed} shift${nFixed===1?"":"s"} you placed by hand.`:"";
   const histNote=PLAN_CTX.hist&&PLAN_CTX.hist.months.length?` Weekends${PLAN_CTX.hist.overnight?" and overnight shifts":""} also even out ${PLAN_CTX.hist.months.slice().reverse().join(", ")} (saved records).`:"";
-  setStatus(`Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${keptNote}${histNote}${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
+  rnd=Math.random;
+  setStatus(`${planVariant?`Alternative ${planVariant}. `:""}Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${keptNote}${histNote}${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
   renderAll();
 }
-function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return Math.random()<0.5?2:3; }
+function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return rnd()<0.5?2:3; }
 
 // carry a person's run/rest state over from whatever was actually committed at the end of the previous month,
 // so a block that finished on the last day of last month still forces the right amount of rest into this one
@@ -2143,8 +2214,8 @@ function buildOnePlan(dates,pattern,activeStarters,fixed){
           // shift type so far keeps each person's own Day/Night split from drifting too lopsided
           // past months (switch): someone who did more overnight shifts than their share is steered off them now
           const cN=x=>hist?(hist.carryN[x]||0)*(isOvernight(t)?-0.4:0.2):0;
-          const sa=(quotas[a]-used[a])+Math.random()*0.5-(typeUsed[a][t.id]||0)*0.15+cN(a);
-          const sb=(quotas[b]-used[b])+Math.random()*0.5-(typeUsed[b][t.id]||0)*0.15+cN(b);
+          const sa=(quotas[a]-used[a])+rnd()*0.5-(typeUsed[a][t.id]||0)*0.15+cN(a);
+          const sb=(quotas[b]-used[b])+rnd()*0.5-(typeUsed[b][t.id]||0)*0.15+cN(b);
           return sb-sa;
         });
         const p=candidates[0];
@@ -2200,7 +2271,7 @@ function buildOnePlan(dates,pattern,activeStarters,fixed){
                 if(ok) validStarts.push(span);
               }
               if(validStarts.length){
-                const span=validStarts[Math.floor(Math.random()*validStarts.length)];
+                const span=validStarts[Math.floor(rnd()*validStarts.length)];
                 span.forEach(ds=>place(ds,p,t.id));
                 progress=true; placedForPerson=true;
                 break;
@@ -2644,6 +2715,11 @@ document.querySelectorAll("[data-algo]").forEach(e=>e.addEventListener("change",
   S.algo=Object.assign(defaultAlgo(),S.algo||{}); S.algo[e.dataset.algo]=e.checked; save(); renderAll();
   setStatus(`${e.closest(".sw").querySelector("b").textContent}: ${e.checked?"on":"off"}.`);
 }));
+$("btnTryAnother").addEventListener("click",()=>{
+  $("moreMenu").open=false;
+  if(!S.staff.length){ setStatus("Add staff first."); return; }
+  setStatus("Planning…"); setTimeout(()=>autoPlot(planVariant+1),10);
+});
 $("btnAutoFresh").addEventListener("click",async()=>{
   const mine=monthPins();
   if(mine.length&&!await askConfirm({title:"Plan this month from scratch?",confirmText:"Plan from scratch",
@@ -2657,6 +2733,30 @@ function showTool(t){
   document.querySelectorAll(".tools [data-pane]").forEach(p=>{ p.hidden=p.dataset.pane!==t; });
 }
 document.querySelectorAll(".toolTabs [data-tool]").forEach(b=>b.addEventListener("click",()=>showTool(b.dataset.tool)));
+/* ---------- month picker ---------- */
+let periodYear=null;   // the year shown in the open panel (picking a month commits it)
+function syncPeriod(){
+  $("periodLabel").textContent=`${MONTHS[S.month]} ${S.year}`;
+  if(!$("periodPop").classList.contains("open")) periodYear=S.year;
+  const now=new Date(), shown=periodYear??S.year;
+  $("periodY").textContent=shown;
+  $("periodGrid").innerHTML=MONTHS.map((m,i)=>`<button type="button" data-m="${i}"${shown===S.year&&i===S.month?' aria-current="true"':""}${shown===now.getFullYear()&&i===now.getMonth()?' class="now" title="This month"':""}>${m.slice(0,3)}</button>`).join("");
+}
+function periodOpen(open){
+  if(open){ periodYear=S.year; syncPeriod(); }
+  $("periodPop").classList.toggle("open",open); $("periodBtn").setAttribute("aria-expanded",String(open));
+  if(open){ const cur=$("periodPop").querySelector("[aria-current=true]")||$("periodPop").querySelector(".periodGrid button"); if(cur) cur.focus(); }
+}
+$("periodBtn").addEventListener("click",()=>periodOpen(!$("periodPop").classList.contains("open")));
+$("periodPrevY").addEventListener("click",()=>{ if(periodYear>1900){ periodYear--; syncPeriod(); } });
+$("periodNextY").addEventListener("click",()=>{ if(periodYear<2200){ periodYear++; syncPeriod(); } });
+$("periodGrid").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-m]"); if(!b) return;
+  periodOpen(false); $("periodBtn").focus();
+  S.month=Number(b.dataset.m); S.year=periodYear; mpSelected.clear(); S.compulsoryStarters=[]; save(); renderAll();
+});
+document.addEventListener("click",e=>{ if(!e.target.closest("#period")) periodOpen(false); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$("periodPop").classList.contains("open")){ periodOpen(false); $("periodBtn").focus(); } });
 function stepMonth(n){
   let m=S.month+n, y=S.year;
   if(m<0){ m=11; y--; } else if(m>11){ m=0; y++; }
