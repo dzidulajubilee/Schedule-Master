@@ -131,7 +131,7 @@ The **Calendar colours** cards on the *Shifts & rules* page switch between 10 co
 13. **Fair across months** — weekends and overnight shift types (ending at or before they start) are evened out using the last 3 months of saved records (the latest record of each month). Workload shows the past counts beside this month's.
 
 ### Algorithm tab (rule switches)
-The **Algorithm** tab, behind the admin password, turns rules 2, 5, 6, 9, 11, 12 and 13 on or off (rule 5 has two switches: keep-apart pairs at all, and the ordinary-weekday part). It also has **Same roster every time**: Auto Plot gives the same roster for the same staff, leave and settings, and **More › Try another** shows alternatives (off: every run is different, and Try another is hidden). Everything is on by default. It locks again when you leave the tab, and a reload never lands on it. The switches are saved in the browser with the rest of the planner and inside each saved record.
+The **Algorithm** tab, behind the admin password, turns rules 2, 5, 6, 9, 11, 12 and 13 on or off (rule 5 has two switches: keep-apart pairs at all, and the ordinary-weekday part). It also has **Carry on from last month's saved record**: when last month isn't on the calendar, Auto Plot continues people's blocks and rest from that month's most recently saved record (off: only the calendar counts). And **Same roster every time**: Auto Plot gives the same roster for the same staff, leave and settings, and **More › Try another** shows alternatives (off: every run is different, and Try another is hidden). Everything is on by default. It locks again when you leave the tab, and a reload never lands on it. The switches are saved in the browser with the rest of the planner and inside each saved record.
 
 ---
 

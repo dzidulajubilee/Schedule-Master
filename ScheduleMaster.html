@@ -727,6 +727,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
       <h3>Fairness</h3>
       <label class="sw"><input type="checkbox" data-algo="keepPins"><span><b>Keep shifts placed by hand</b><small>Auto Plot plans around shifts placed with the Plot tool</small></span></label>
       <label class="sw"><input type="checkbox" data-algo="shareWeekends"><span><b>Share weekends fairly</b><small>Saturday and Sunday shifts, by the weekend days each person is available</small></span></label>
+      <label class="sw"><input type="checkbox" data-algo="prevRecord"><span><b>Carry on from last month's saved record</b><small>When last month isn't on the calendar, Auto Plot continues from its most recently saved record. Off: only the calendar counts</small></span></label>
       <label class="sw"><input type="checkbox" data-algo="sameRoster"><span><b>Same roster every time</b><small>Auto Plot gives the same result for the same staff, leave and settings. More → Try another shows alternatives. Off: every run is different</small></span></label>
       <label class="sw"><input type="checkbox" data-algo="history"><span><b>Even out weekends and overnight shifts across months</b><small>Uses the last 3 months of saved records</small></span></label>
     </div>
@@ -943,7 +944,7 @@ function defaultState(){
   };
 }
 function defaultAlgo(){
-  return {keepPins:true, shareWeekends:true, history:true, noFlip:true, keepApart:true, apartWeekday:true, quotaCap:true, bridgeLeave:true, sameRoster:true};
+  return {keepPins:true, shareWeekends:true, history:true, noFlip:true, keepApart:true, apartWeekday:true, quotaCap:true, bridgeLeave:true, sameRoster:true, prevRecord:true};
 }
 /* Is a rule switch on? (All on unless turned off on the Algorithm tab.) */
 function A(k){ return !(S.algo && S.algo[k]===false); }
@@ -1575,6 +1576,8 @@ function renderWorkload(){
       const nxt=S.shifts[nextD]&&S.shifts[nextD][person];
       if(A("noFlip") && nxt && nxt!==cur){ problems.push("shift-type flip"); break; }
     }
+    { const d1=ymd(S.year,S.month,1), f=personShift(d1,person), pv=prevMonthSource(d1).get(addDaysStr(d1,-1),person);   // the 1st vs last month's record
+      if(A("noFlip") && f && pv && pv!==f) problems.push("shift-type flip"); }
     for(const pair of normalizedPairs()){
       if(!pair.includes(person)) continue;
       const partner=pair[0]===person?pair[1]:pair[0];
@@ -2058,6 +2061,7 @@ function autoPlot(variant){
   const allStarters=compulsoryStartersList();
   const activeStarters=allStarters.filter(cs=>!isOnLeave(cs.person,day1));
   const skippedForLeave=allStarters.filter(cs=>isOnLeave(cs.person,day1));
+  PREV_SRC=prevMonthSource(day1);   // end of last month: calendar, else its saved record (switch)
   const carryNotes=csCarryoverNotes(activeStarters,day1);
 
   const patterns = S.rotation==="auto" ? ["3","2","mix"] : [S.rotation];
@@ -2072,7 +2076,7 @@ function autoPlot(variant){
   PLAN_CTX={hist:A("history")?monthHistory():null};
   planVariant=A("sameRoster")?variant:0;
   if(A("sameRoster")){
-    const before={}; for(let k=1;k<=7;k++){ const ds=addDaysStr(dates[0],-k); if(S.shifts[ds]) before[ds]=S.shifts[ds]; }
+    const before={}; for(let k=1;k<=7;k++){ const ds=addDaysStr(dates[0],-k), o={}; S.staff.forEach(p=>{ const v=lookBack(ds,p); if(v) o[p]=v; }); if(Object.keys(o).length) before[ds]=o; }
     const lv={}; S.staff.forEach(p=>{ lv[p]=(S.leave[p]||[]).filter(d=>dates.includes(d)).sort(); });
     rnd=seededRandom(JSON.stringify([dates,S.staff,lv,S.shiftTypes,S.keepApart,S.expShifts,S.restHrs,S.rotation,S.requireAll,S.weekendLeaveNoQuota,
       activeStarters,before,fixed,S.algo,PLAN_CTX.hist&&[PLAN_CTX.hist.carryW,PLAN_CTX.hist.carryN],planVariant]));
@@ -2105,6 +2109,8 @@ function autoPlot(variant){
   save();
   const gapCount=(best.score>=1000000)?Math.floor(best.score/1000000):0;
   const pairsUsed=normalizedPairs();
+  const prevNote=PREV_SRC&&PREV_SRC.kind==="record"?` Carried on from the end of ${MONTHS[(S.month+11)%12]} as saved in the record "${PREV_SRC.label}".`:"";
+  PREV_SRC=null;
   const pairsNote=pairsUsed.length? ` Keeping ${pairsUsed.map(p=>`${p[0]} & ${p[1]}`).join(" and ")} apart.` : "";
   const startersNote=activeStarters.length? ` Compulsory starters (day 1): ${activeStarters.map(cs=>`${cs.person} → ${shiftById(cs.shiftType)?.name||cs.shiftType}`).join(", ")}.` : "";
   const leaveNote=skippedForLeave.length? ` ${skippedForLeave.map(cs=>cs.person).join(", ")} ${skippedForLeave.length===1?"was":"were"} on leave on the 1st — placed normally instead of forced.` : "";
@@ -2112,7 +2118,7 @@ function autoPlot(variant){
   const keptNote=nFixed?` Kept the ${nFixed} shift${nFixed===1?"":"s"} you placed by hand.`:"";
   const histNote=PLAN_CTX.hist&&PLAN_CTX.hist.months.length?` Weekends${PLAN_CTX.hist.overnight?" and overnight shifts":""} also even out ${PLAN_CTX.hist.months.slice().reverse().join(", ")} (saved records).`:"";
   rnd=Math.random;
-  setStatus(`${planVariant?`Alternative ${planVariant}. `:""}Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${keptNote}${histNote}${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
+  setStatus(`${planVariant?`Alternative ${planVariant}. `:""}Auto Plot done. Pattern: ${best.pattern==="mix"?"mixed 2/3":best.pattern+" on / "+best.pattern+" off"}. Score ${best.score}.${prevNote}${keptNote}${histNote}${pairsNote}${startersNote}${leaveNote}${carryNote}${gapCount?` ${gapCount} coverage/keep-apart issue(s) remain — staffing may be too tight.`:" Minimum cover met."}`);
   renderAll();
 }
 function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") return 3; return rnd()<0.5?2:3; }
@@ -2120,20 +2126,39 @@ function blockLenFor(pattern){ if(pattern==="2") return 2; if(pattern==="3") ret
 // carry a person's run/rest state over from whatever was actually committed at the end of the previous month,
 // so a block that finished on the last day of last month still forces the right amount of rest into this one
 // (ported from the legacy planner's initState)
+/* ---------- the end of last month ----------
+   Auto Plot continues from the end of the previous month: the calendar when that month is plotted there (what you see,
+   saved or not), otherwise its most recently saved record (switch). Only the last 7 days are read; they always fall
+   in the previous month. lookBack(ds,p) is used for every day before the 1st while Auto Plot runs. */
+let PREV_SRC=null;
+function prevMonthSource(day1){
+  const pd=addDaysStr(day1,-1), py=+pd.slice(0,4), pm=+pd.slice(5,7)-1, pre=pd.slice(0,8);
+  const onCal=Object.keys(S.shifts).some(ds=>ds.startsWith(pre)&&S.staff.some(p=>S.shifts[ds][p]));
+  if(onCal) return {kind:"calendar",first:day1,get:(ds,p)=>personShift(ds,p)};
+  if(A("prevRecord")){
+    const recs=RECORDS.filter(r=>r&&r.data&&Number(r.year)===py&&Number(r.month)===pm);
+    if(recs.length){
+      const rec=recs.slice().sort((a,b)=>String(b.savedAt||"").localeCompare(String(a.savedAt||"")))[0], sh=rec.data.shifts||{};
+      return {kind:"record",label:rec.label,first:day1,get:(ds,p)=>(sh[ds]||{})[p]||null};
+    }
+  }
+  return {kind:null,first:day1,get:()=>null};
+}
+function lookBack(ds,p){ return (PREV_SRC&&ds<PREV_SRC.first)?PREV_SRC.get(ds,p):personShift(ds,p); }
 function seedCarryover(dates,pattern){
   const carry={};
   const dayBefore=addDaysStr(dates[0],-1);
   S.staff.forEach(p=>{
-    const lastType=personShift(dayBefore,p);
+    const lastType=lookBack(dayBefore,p);
     const bl=blockLenFor(pattern);
     if(lastType){
       let run=1;
-      for(let k=1;k<7;k++){ if(personShift(addDaysStr(dayBefore,-k),p)===lastType) run++; else break; }
+      for(let k=1;k<7;k++){ if(lookBack(addDaysStr(dayBefore,-k),p)===lastType) run++; else break; }
       if(run>=bl) carry[p]={type:null,daysLeft:0,blockLen:bl,offLeft:bl,lastEnd:null};
       else carry[p]={type:lastType,daysLeft:bl-run,blockLen:bl,offLeft:0,lastEnd:dayBefore};
     } else {
       let rest=0;
-      for(let k=0;k<7;k++){ if(!personShift(addDaysStr(dayBefore,-k),p)) rest++; else break; }
+      for(let k=0;k<7;k++){ if(!lookBack(addDaysStr(dayBefore,-k),p)) rest++; else break; }
       carry[p]={type:null,daysLeft:0,blockLen:bl,offLeft:Math.max(0,bl-rest),lastEnd:null};
     }
   });
@@ -2317,7 +2342,7 @@ function buildOnePlan(dates,pattern,activeStarters,fixed){
         const [y,m,d]=ds.split("-").map(Number); const weekend=isWeekend(y,m-1,d);
         if(!keepApartOK(ds,under,typeId,weekend)) continue;
         const prevD=addDaysStr(ds,-1), nextD=addDaysStr(ds,1);
-        const prevType=(plan[prevD]&&plan[prevD][under])||personShift(prevD,under);
+        const prevType=(plan[prevD]&&plan[prevD][under])||lookBack(prevD,under);
         const nextType=(plan[nextD]&&plan[nextD][under])||personShift(nextD,under);
         if(A("noFlip") && prevType && prevType!==typeId) continue;
         if(A("noFlip") && nextType && nextType!==typeId) continue;
@@ -2471,7 +2496,7 @@ function shareWeekends(plan,dates,fixed){
   const n=dates.length, P=S.staff, ids=S.shiftTypes.map(t=>t.id);
   const g={}; P.forEach(p=>g[p]=dates.map(ds=>(plan[ds]&&plan[ds][p])||""));
   const isWk=dates.map(ds=>{ const [y,m,d]=ds.split("-").map(Number); return isWeekend(y,m-1,d); });
-  const before=p=>personShift(addDaysStr(dates[0],-1),p)||"";
+  const before=p=>lookBack(addDaysStr(dates[0],-1),p)||"";
   const fixedAt=(p,i)=>!!(fixed&&fixed[dates[i]]&&fixed[dates[i]][p]);
   const faults=p=>{
     const t=g[p]; let flips=0,long=0,short=0,lone=0,prev=before(p),run=prev?1:0,gap=prev?0:99,started=!!prev;
