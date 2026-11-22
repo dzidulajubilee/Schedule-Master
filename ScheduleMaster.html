@@ -428,7 +428,7 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
    the week number in the margin, weekends shaded, each person's shift as a tinted chip. */
 @page{ margin: 10mm; }   /* no fixed size: the print dialog keeps Paper size and Layout */
 @media print{
-  .top,.tools,.status,.saveRow,.histNote,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
+  .top,.tools,.status,.saveRow,.histNote,.wkCol,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
   .page[data-page=roster]{display:block!important;}
   .printOnly{display:block!important;}
   #wlMonth{display:inline!important;}
@@ -1555,7 +1555,7 @@ function renderWorkload(){
   const table=$("workloadTable"); 
   const hist=A("history")?monthHistory():null, hasH=!!(hist&&hist.months.length);
   const hNote=n=>hasH?` <span class="small histNote">(${n} in ${hist.months.length===1?"last month":"last "+hist.months.length+" months"})</span>`:"";
-  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th title="Shifts on a Saturday or Sunday">Weekends</th><th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
+  let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th class="wkCol" title="Shifts on a Saturday or Sunday">Weekends</th><th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
   let body="";
   S.staff.forEach(person=>{
     const total=totalShiftsFor(person,null);
@@ -1591,7 +1591,7 @@ function renderWorkload(){
     }
     const status=problems.length?[...new Set(problems)].join(", "):"OK";
     const wkN=monthDates.filter(d=>{ const [yy,mm,dd]=d.split("-").map(Number); return isWeekend(yy,mm-1,dd)&&S.shifts[d][person]; }).length;
-    body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map((c,i)=>`<td>${c}${isOvernight(S.shiftTypes[i])?hNote(hist?hist.N[person]||0:0):""}</td>`).join("")+`<td>${wkN}${hNote(hist?hist.W[person]||0:0)}</td><td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
+    body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map((c,i)=>`<td>${c}${isOvernight(S.shiftTypes[i])?hNote(hist?hist.N[person]||0:0):""}</td>`).join("")+`<td class="wkCol">${wkN}${hNote(hist?hist.W[person]||0:0)}</td><td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
   });
   table.innerHTML=head+body;
 }
