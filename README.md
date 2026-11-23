@@ -73,7 +73,7 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
 
 ### Finding your way around
 
-- **Top bar**: the month (‹ › arrows, or click it to pick a month and year; the app always opens on the current month), **Auto Plot**, a **More** menu (Print / PDF, the two printout options, Clear this month, Reset all data in this browser), a light/dark switch, **Mail server** and **Log out**.
+- **Top bar**: the month (‹ › arrows, or click it to pick a month and year; the app always opens on next month, the one being planned; a saved month is a click away under Records), **Auto Plot**, a **More** menu (Print / PDF, the two printout options, Clear this month, Reset all data in this browser), a light/dark switch, **Mail server** and **Log out**.
 - **Tabs**: **Roster** (the calendar, a side panel with **Plot**, **Leave** and **Starters** tabs, and the Workload table with the coverage check), **Staff** (the list, Save / Reload, Export / Import `staff.json`), **Shifts & rules** (shift types, expected shifts, rest, rotation, keep-apart pairs, calendar colours), **Records** and **Email**. The page you're on is kept in the address (`#staff`, …) and comes back after a reload.
 - **Light / dark**: follows the device until you use the switch; the choice is saved in this browser. Dark mode is screen-only.
 

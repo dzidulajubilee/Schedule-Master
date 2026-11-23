@@ -951,7 +951,7 @@ function defaultAlgo(){
 /* Is a rule switch on? (All on unless turned off on the Algorithm tab.) */
 function A(k){ return !(S.algo && S.algo[k]===false); }
 let S=load();
-{ const n=new Date();   // always open on the current month (starters are per month, so they go if the month moved)
+{ const t=new Date(), n=new Date(t.getFullYear(),t.getMonth()+1,1);   // always open on next month, the one being planned (starters are per month, so they go if the month moved)
   if(S.year!==n.getFullYear()||S.month!==n.getMonth()){ S.year=n.getFullYear(); S.month=n.getMonth(); S.compulsoryStarters=[]; } }
 function load(){
   try{
