@@ -12,7 +12,7 @@ Either way, the app itself always talks to the same `ScheduleMaster.py` server �
 
 ![Schedule Master system architecture: browser page with the planning engine, nginx and the hardened Python service on the Linux VM, JSON data files and the mail relay](docs/images/1-architecture-stack.png)
 
-All diagrams in this README come from one editable draw.io file, [`docs/ScheduleMaster-architecture.drawio`](docs/ScheduleMaster-architecture.drawio) (open it at app.diagrams.net or in the draw.io desktop app; each page is a tab). The PNGs in [`docs/images/`](docs/images/) are exports of its pages — after editing a page, re-export it over the matching PNG.
+The diagrams in this README are PNG exports in [`docs/images/`](docs/images/), drawn in draw.io (one page per diagram). The editable draw.io file is kept outside the repository.
 
 ---
 
@@ -184,13 +184,9 @@ Each selected day runs the same live checks Auto Plot's scoring penalizes for: l
 
 ### The math behind it
 
-Every formula Auto Plot uses — quota, daily minimum and target, supply vs demand, rotation blocks and rest, the Phase 1 priority, the Phase 2/3 conditions and the full score with its weights — is on one page, typeset (draw.io page 5):
+Every formula Auto Plot uses — quota, daily minimum and target, rest, carry-over, fairness across months, the Phase 1 ranking, the Phase 2/3 conditions, the weekend swap and the full score with its weights — is on one page, typeset (draw.io page 5):
 
-![Auto Plot formulas: quota, daily demand, supply vs demand, rotation and carry-over, rest hours, Phases 1 to 3, the score and its weights](docs/images/5-the-math-formulas.png)
-
-Page 6 works through a real run (September 2026, 8 staff, default settings) whose score of 3,560 is accounted for term by term — 3,000 points are unavoidable for that team size, 560 come from Day/Night splits — and shows how the best score improves with the number of attempts per rotation pattern:
-
-![Worked example: score breakdown, per-person totals, why 10 shifts fall below target, why 560, and the search chart](docs/images/6-worked-example-and-search.png)
+![Auto Plot formulas: quota, daily demand, rest, carry-over, fairness across months, Phases 1 to 3, the weekend swap, the score and its weights](docs/images/5-the-math-formulas.png)
 
 ---
 
@@ -279,17 +275,17 @@ flowchart TD
 
 The Mermaid charts above give the overview; the draw.io pages go one level deeper.
 
-**Auto Plot logic** — the search loop, what one candidate plan goes through (inputs, carry-over, Phases 0–3, eligibility and keep-apart rules) and the scoring table:
+**Auto Plot logic** — the search loop, what one candidate plan goes through (inputs, carry-over from the calendar or a saved record, shifts placed by hand, Phases 0–3, eligibility and keep-apart rules), Share weekends and the scoring table:
 
 ![Auto Plot logic: search loop, buildOnePlan phases and scorePlan penalty table](docs/images/2-auto-plot-logic.png)
 
-**Rules and checks** — the decision chain Manual Plot runs before placing each shift, the leave rules, the live checks, and the settings that drive them:
+**Rules and checks** — the decision chain the Plot tool runs before placing each shift, the leave rules, the live checks, and the settings and Algorithm switches that drive them:
 
 ![Manual Plot decision chain, leave rules, live checks, compulsory-starter checks and settings](docs/images/3-rules-and-checks.png)
 
-**Email and record flows** — sending shifts (including people switched Off and invalid addresses) and how a save from an out-of-date page is refused instead of overwriting newer records:
+**Email, records and rules flows** — sending shifts (including people switched Off and invalid addresses), Save this month with Replace or Save as new, how a save from an out-of-date page is refused instead of overwriting newer records, and how rules.json is loaded and saved:
 
-![Email sending flow and saved-records version check](docs/images/4-email-and-record-flows.png)
+![Email sending, saved-records version check and rules flows](docs/images/4-email-and-record-flows.png)
 
 ---
 
