@@ -4,6 +4,8 @@ Schedule Master local server.
 Serves ScheduleMaster.html and its companion files from this folder, and exposes:
   GET  /api/staff    -> reads staff.json ({"staff": [...]})
   PUT  /api/staff    -> writes staff.json (body: {"staff": [...]})
+  GET  /api/rules    -> reads rules.json ({"rules": {...}} or {"rules": null} when none is saved yet)
+  PUT  /api/rules    -> writes rules.json (body: {"rules": {...}}): the Rules tab and the Algorithm switches
   GET  /api/records  -> reads records.json ({"records": [...], "version": "<fingerprint>"})
   PUT  /api/records  -> writes records.json (body: {"records": [...], "baseVersion": "<fingerprint>"})
                         -- full replace, same pattern as /api/staff; the client sends the whole array
@@ -78,6 +80,7 @@ RECORDS_FILE = os.path.join(FOLDER, "records.json")
 EMAILS_FILE = os.path.join(FOLDER, "emails.json")
 LOGIN_FILE = os.path.join(FOLDER, "login.json")
 MAIL_FILE = os.path.join(FOLDER, "mail.json")
+RULES_FILE = os.path.join(FOLDER, "rules.json")   # Rules tab + Algorithm switches, so they survive restarts, updates and other browsers
 HTML_FILE = "ScheduleMaster.html"
 PORT = 8743
 
@@ -170,6 +173,32 @@ def write_staff(data):
         json.dump({"staff": sorted(names)}, f, indent=2)
     os.replace(tmp, STAFF_FILE)
     return {"staff": sorted(names)}
+
+
+RULE_KEYS = ("shiftTypes", "expShifts", "restHrs", "rotation", "requireAll", "weekendLeaveNoQuota", "keepApart", "algo")
+
+
+def read_rules():
+    """{"rules": {...}} or {"rules": null} when nothing is saved yet (an unreadable file counts as nothing)."""
+    try:
+        with open(RULES_FILE, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        rules = data.get("rules") if isinstance(data, dict) else None
+        return {"rules": {k: v for k, v in rules.items() if k in RULE_KEYS} if isinstance(rules, dict) else None}
+    except (OSError, ValueError):
+        return {"rules": None}
+
+
+def write_rules(data):
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, dict):
+        raise ValueError('Expected {"rules": {...}}')
+    rules = {k: v for k, v in rules.items() if k in RULE_KEYS}
+    tmp = RULES_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"rules": rules}, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, RULES_FILE)
+    return {"ok": True}
 
 
 # records.json is saved as a whole list, so a page holding an out-of-date copy (a tab opened earlier, or
@@ -1114,8 +1143,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/session":
             self._send_json(200, {"authenticated": self._authed()})
             return
-        if path in ("/api/staff", "/api/records", "/api/emails") and not self._authed():
+        if path in ("/api/staff", "/api/records", "/api/emails", "/api/rules") and not self._authed():
             self._send_json(401, {"error": "not authenticated"})
+            return
+        if path == "/api/rules":
+            self._send_json(200, read_rules())
             return
         if path == "/api/staff":
             try:
@@ -1166,7 +1198,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         path = self.path.rstrip("/")
-        if path in ("/api/staff", "/api/records", "/api/emails") and not self._require_auth():
+        if path in ("/api/staff", "/api/records", "/api/emails", "/api/rules") and not self._require_auth():
+            return
+        if path == "/api/rules":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                if length > 1_000_000:
+                    raise ValueError("too large")
+                body = self.rfile.read(length) if length else b"{}"
+                self._send_json(200, write_rules(json.loads(body.decode("utf-8"))))
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
             return
         if path == "/api/staff":
             try:

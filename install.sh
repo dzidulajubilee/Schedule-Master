@@ -153,7 +153,7 @@ if [ "$SRC_DIR" != "$APP_DIR" ]; then
   for f in ScheduleMaster.py ScheduleMaster.html README.md; do
     [ -f "$SRC_DIR/$f" ] && cp -f "$SRC_DIR/$f" "$APP_DIR/$f"
   done
-  for f in staff.json records.json emails.json login.json mail.json; do   # your data/settings: only copied if not there yet
+  for f in staff.json records.json rules.json emails.json login.json mail.json; do   # your data/settings: only copied if not there yet
     if [ -f "$SRC_DIR/$f" ] && [ ! -e "$APP_DIR/$f" ]; then cp "$SRC_DIR/$f" "$APP_DIR/$f"; fi
   done
 fi

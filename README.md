@@ -69,7 +69,7 @@ Every visit starts at a sign-in screen; there's no way to reach the app without 
 - Can **email each person their own shifts** for the month — nobody sees anyone else's — with a PDF and an importable calendar (`.ics`) file attached (see §10).
 - Has a **Mail server** page, behind the admin password, for the relay settings and a test email (see §10).
 - Sits behind a **sign-in screen** (see *Login & access*) once `ScheduleMaster.py` is running.
-- Persists staff, records, saved email addresses, mail settings and login credentials to `staff.json` / `records.json` / `emails.json` / `mail.json` / `login.json` on the server; the current month's shifts, leave, and settings live only in the browser's `localStorage` (see §6).
+- Persists staff, records, saved email addresses, mail settings and login credentials to `staff.json` / `records.json` / `rules.json` / `emails.json` / `mail.json` / `login.json` on the server; the current month's shifts and leave live only in the browser's `localStorage` (see §6).
 
 ### Finding your way around
 
@@ -297,11 +297,11 @@ The Mermaid charts above give the overview; the draw.io pages go one level deepe
 
 Signing in requires `ScheduleMaster.py` to be running (see *Login & access*), so in practice there's no longer a fully offline, server-less mode — but not everything lives on the server:
 
-- **Server-backed** (shared across everyone who signs in, read/written straight to disk next to `ScheduleMaster.py`): `staff.json` (`GET`/`PUT api/staff`), `records.json` (`GET`/`PUT api/records`, §8), `emails.json` (`GET`/`PUT api/emails`, §10), and `login.json` (credentials only, §*Login & access*).
-- **Browser-only** (this device/browser only, never sent to the server except when you explicitly send shifts by email): the current month's `shifts`, `leave`, planning settings, and the selected color `palette` — saved to `localStorage` under the key `schedulemaster_state` (auto-migrated once from the old key `planthat_state` if found).
+- **Server-backed** (shared across everyone who signs in, read/written straight to disk next to `ScheduleMaster.py`): `staff.json` (`GET`/`PUT api/staff`), `records.json` (`GET`/`PUT api/records`, §8), `rules.json` (`GET`/`PUT api/rules`: the Shifts & rules settings and the Algorithm switches, saved on every change so they survive a restart, an update or another browser; created from the first browser that opens the app), `emails.json` (`GET`/`PUT api/emails`, §10), and `login.json` (credentials only, §*Login & access*).
+- **Browser-only** (this device/browser only, never sent to the server except when you explicitly send shifts by email): the current month's `shifts`, `leave`, a copy of the planning settings (`rules.json` wins when the page loads), and the selected color `palette` — saved to `localStorage` under the key `schedulemaster_state` (auto-migrated once from the old key `planthat_state` if found).
 - **Confirmations** use the app's own dialog (not the browser's pop-up) for: deleting, loading (Plot) or overwriting a saved record; sending emails; clearing the month; resetting local data; removing all of a person's leave; placing a shift despite a soft keep-apart clash; reloading with unsaved staff changes; removing a staff member; removing a saved email address; and removing a shift by clicking it on the calendar. Actions that can't be undone have a red button and start with Cancel selected, so pressing Enter by accident cancels. Esc or clicking outside the dialog also cancels.
 - **Staff edits** (add, remove, import) change the list in this browser straight away but only reach `staff.json` when you click **Save** on the Staff page; the status line says so after each edit. **Reload** — and the next page load — replace the list with the server's copy, so Reload now asks first if there are unsaved staff edits.
-- **Reset all data in this browser** (More menu) wipes shifts, leave, and settings from *this browser only* — it does not touch `staff.json`, `records.json`, `emails.json`, `mail.json` or `login.json` on disk.
+- **Reset all data in this browser** (More menu) wipes shifts, leave, and settings from *this browser only* — it does not touch `staff.json`, `records.json`, `rules.json`, `emails.json`, `mail.json` or `login.json` on disk.
 
 ---
 

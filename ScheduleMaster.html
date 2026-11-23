@@ -274,6 +274,7 @@ details.menu[open]>summary{background:var(--raised);}
 .chip:hover{filter:brightness(.95);}
 .chip.leave{background:var(--leave-bg);color:var(--leave);cursor:default;}
 .chip.pinned{box-shadow:inset 0 0 0 1.5px currentColor;}
+:root[data-palette^="deep"] .chip.pinned{box-shadow:inset 0 0 0 1.5px var(--text);}   /* solid chips: dark ring in light mode, white in dark mode */
 .legend-pill.pin-pill::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2);}
 /* tools: Plot / Leave / Starters */
 .tools{position:sticky;top:120px;}
@@ -886,6 +887,7 @@ async function boot(alreadyAuthed){
   showApp();
   renderAll();
   await tryServerLoad();
+  await tryServerLoadRules();
   await tryServerLoadRecords();
   await tryServerLoadEmails();
 }
@@ -959,11 +961,33 @@ function load(){
   }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} pushRules(); }
+// The Rules tab and the Algorithm switches are also kept in rules.json next to the app, so they survive a restart,
+// an update or another browser. rules.json wins over this browser's copy when the page loads.
+var RULE_KEYS=["shiftTypes","expShifts","restHrs","rotation","requireAll","weekendLeaveNoQuota","keepApart","algo"];
+var rulesSync=false, rulesSent="", rulesTimer=0;
+function rulesJSON(){ const r={}; RULE_KEYS.forEach(k=>{ r[k]=S[k]; }); return JSON.stringify({rules:r}); }
+function pushRules(){
+  if(!rulesSync) return;
+  clearTimeout(rulesTimer);
+  rulesTimer=setTimeout(()=>{ const j=rulesJSON(); if(j===rulesSent) return; rulesSent=j;
+    fetch("api/rules",{method:"PUT",keepalive:true,headers:{"Content-Type":"application/json"},body:j}).then(r=>{ if(!r.ok) rulesSent=""; }).catch(()=>{ rulesSent=""; }); },300);
+}
+async function tryServerLoadRules(){
+  try{
+    const r=await fetch("api/rules",{cache:"no-store"}); if(!r.ok) return;
+    const d=await r.json(); rulesSync=true;
+    if(d.rules&&typeof d.rules==="object"&&Object.keys(d.rules).length){
+      RULE_KEYS.forEach(k=>{ if(k in d.rules) S[k]=d.rules[k]; });
+      S.algo=Object.assign(defaultAlgo(), S.algo||{});
+      rulesSent=rulesJSON(); save(); renderAll();
+    } else pushRules();   // first run with rules.json: start it from this browser's rules
+  }catch(e){}
+}
 $("btnResetAll").addEventListener("click",async()=>{
   if(!await askConfirm({title:"Reset all data in this browser?", danger:true, confirmText:"Reset everything",
     message:"This wipes ALL shifts, leave, staff, and settings stored in this browser for Schedule Master — not just this month, everything. This can't be undone.",
-    details:[["Not affected","staff.json, records.json and emails.json on the server"]]})) return;
+    details:[["Not affected","staff.json, records.json, rules.json and emails.json on the server"]]})) return;
   try{ localStorage.removeItem("schedulemaster_state"); localStorage.removeItem("planthat_state"); }catch(e){}
   location.reload();
 });
