@@ -401,6 +401,9 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
 .mailGrid label input,.mailGrid label select{width:100%;}
 .mailGrid .wide{grid-column:1/-1;}
 .mailHead{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.recRulesNote{margin:0 0 16px;font-size:13px;line-height:1.5;padding:8px 12px;border-radius:var(--r);background:var(--warn-bg);color:var(--warn);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.recRulesNote[hidden]{display:none;}
+.card.recLocked{opacity:.65;}
 .mailMsg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:var(--r);background:var(--sunk);color:var(--t2);}
 .mailMsg.ok{background:var(--accent-soft);color:var(--accent);}
 .mailMsg.bad{background:var(--leave-bg);color:var(--bad);}
@@ -636,6 +639,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
 <!-- ===== Shifts & rules ===== -->
 <section class="page" data-page="rules">
   <div class="pageHead"><div><h1>Shifts &amp; rules</h1><p>What Auto Plot works to. Changes apply the next time you run it</p></div></div>
+  <div class="recRulesNote" hidden></div>
   <div class="card" id="shiftTypesPanel">
     <div class="row" style="margin:0 0 16px;justify-content:space-between">
       <div><h2>Shift types</h2><p class="desc" style="margin-bottom:0">How many people each shift needs on weekdays and weekends</p></div>
@@ -713,6 +717,7 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
 <!-- ===== Algorithm (behind the admin password) ===== -->
 <section class="page" data-page="algorithm">
   <div class="pageHead"><div><h1>Algorithm</h1><p>How Auto Plot plans and what the Plot tool and Workload check. Locked: it needs the admin password, and locks again when you leave this tab</p></div></div>
+  <div class="recRulesNote" hidden></div>
   <div class="card">
     <h2>Turn rules on or off</h2><p class="desc">All on by default. Saved in this browser with the rest of the planner, and with records</p>
     <div class="switchGrid">
@@ -962,7 +967,20 @@ function load(){
   }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem("schedulemaster_state", JSON.stringify(S)); }catch(e){} pushRules(); }
+function save(){ const st=recRules?Object.assign({},S,recRules.rules):S;   // a plotted record's rules are never saved as yours
+  try{ localStorage.setItem("schedulemaster_state", JSON.stringify(st)); }catch(e){} if(!recRules) pushRules(); }
+// A plotted record shows and checks with the rules saved in it. Your own rules (everything in rules.json) are put aside,
+// never overwritten, and come back when you leave the record: another month, Auto Plot, Reload, or Leave this record.
+let recRules=null;   // {rules, label, year, month} while a record's rules are on screen
+function backToMyRules(){ if(!recRules) return; const r=recRules.rules; recRules=null; RULE_KEYS.forEach(k=>{ S[k]=r[k]; }); save(); }
+function leaveRecord(){ backToMyRules(); renderAll(); }
+function lockRulesUI(){
+  const on=!!recRules;
+  [$("shiftTypesPanel"), $("keepApartUI").closest(".card"), document.querySelector('[data-page="algorithm"] > .card')].forEach(c=>{ if(c){ c.inert=on; c.classList.toggle("recLocked",on); } });   // not Calendar colours
+  document.querySelectorAll(".recRulesNote").forEach(n=>{ n.hidden=!on;
+    n.innerHTML=on?`<span>Showing the rules saved with the record "${esc(recRules.label)}", read-only. Your own rules come back when you leave this record.</span><button type="button">Leave this record</button>`:"";
+    const b=n.querySelector("button"); if(b) b.addEventListener("click",leaveRecord); });
+}
 // The Rules tab and the Algorithm switches are also kept in rules.json next to the app, so they survive a restart,
 // an update or another browser. rules.json wins over this browser's copy when the page loads.
 var RULE_KEYS=["shiftTypes","expShifts","restHrs","rotation","requireAll","weekendLeaveNoQuota","keepApart","algo"];
@@ -1016,6 +1034,7 @@ function normalizedPairs(){
   const seen=new Set(); const out=[];
   S.keepApart.forEach(p=>{
     if(!p[0]||!p[1]||p[0]===p[1]) return;
+    if(!S.staff.includes(p[0])||!S.staff.includes(p[1])) return;   // someone not on staff: kept, but ignored until added back
     const key=[p[0],p[1]].slice().sort().join("\u241F");
     if(seen.has(key)) return;
     seen.add(key);
@@ -1119,12 +1138,11 @@ function renderStaff(){
       const leaveDays=(S.leave[name]||[]).length;
       const shiftCount=Object.values(S.shifts).filter(day=>day && day[name]).length;
       if(!await askConfirm({title:`Remove ${name} from staff?`, danger:true, confirmText:"Remove",
-        message:"This removes them from the staff list and deletes their leave and plotted shifts in every month in this browser. Their keep-apart and compulsory-starter slots are cleared. (Click Save afterwards to update staff.json.)",
+        message:"This removes them from the staff list and deletes their leave and plotted shifts in every month in this browser. Their compulsory-starter slots are cleared; a keep-apart pair with them is kept but ignored until they are added back. (Click Save afterwards to update staff.json.)",
         details:[["Leave days",leaveDays],["Plotted shifts",shiftCount]]})) return;
       S.staff=S.staff.filter(n=>n!==name);
       delete S.leave[name];
       for(const d in S.shifts) delete S.shifts[d][name];
-      S.keepApart.forEach(p=>{ if(p[0]===name)p[0]=null; if(p[1]===name)p[1]=null; });
       (S.compulsoryStarters||[]).forEach(cs=>{ if(cs.person===name) cs.person=null; });
       save(); renderAll(); noteStaffUnsaved(`Removed ${name}.`);
     });
@@ -1154,8 +1172,7 @@ function renderKeepApartUI(){
     const p=S.keepApart[i];
     const row=document.createElement("div"); row.className="row";
     row.innerHTML=`<label>Pair ${i+1}</label>
-      <select data-i="${i}" data-k="0"><option value="">—</option>${S.staff.map(n=>`<option ${p[0]===n?"selected":""} value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
-      <select data-i="${i}" data-k="1"><option value="">—</option>${S.staff.map(n=>`<option ${p[1]===n?"selected":""} value="${esc(n)}">${esc(n)}</option>`).join("")}</select>`;
+      ${[0,1].map(k=>`<select data-i="${i}" data-k="${k}"><option value="">—</option>${S.staff.map(n=>`<option ${p[k]===n?"selected":""} value="${esc(n)}">${esc(n)}</option>`).join("")}${p[k]&&!S.staff.includes(p[k])?`<option selected value="${esc(p[k])}">${esc(p[k])} (not on staff)</option>`:""}</select>`).join("\n      ")}`;
     row.querySelectorAll("select").forEach(sel=>sel.addEventListener("change",()=>{
       S.keepApart[i][Number(sel.dataset.k)]=sel.value||null; save();
       const pr=S.keepApart[i];
@@ -1163,6 +1180,10 @@ function renderKeepApartUI(){
       renderWorkload(); renderCoverage();
     }));
     box.appendChild(row);
+    const out=[p[0],p[1]].filter(n=>n&&!S.staff.includes(n));
+    if(p[0]&&p[1]&&out.length){ const h=document.createElement("div"); h.className="hint"; h.style.color="var(--warn)";
+      h.textContent=`Pair ${i+1} is ignored while ${out.join(" and ")} ${out.length>1?"are":"is"} not on the staff list. It works again when added back; set it to — to remove it.`;
+      box.appendChild(h); }
   });
 }
 
@@ -1662,6 +1683,8 @@ function renderCoverage(){
 }
 
 function renderAll(){
+  if(recRules && (S.year!==recRules.year || S.month!==recRules.month)) backToMyRules();   // moved to another month
+  lockRulesUI();
   prunePins(); renderAlgo(); syncTryAnother(); syncSaveMonth(); renderNav(); applyTheme(); fillMonthYear(); renderPaletteSwatches(); renderShiftTypes(); renderStaff(); renderLeaveGrid(); renderManualCalendar(); renderCompulsoryStarters(); renderCalendar(); renderWorkload(); renderCoverage(); renderEmailPanel();
   $("expShifts").value=S.expShifts; $("restHrs").value=S.restHrs; $("rotation").value=S.rotation;
   $("requireAll").checked=S.requireAll; $("weekendLeaveNoQuota").checked=S.weekendLeaveNoQuota;
@@ -1716,7 +1739,7 @@ async function tryServerLoad(){
     S.serverMode=true;
     staffUnsaved=false;
     staffFromRecord=null;
-    save(); renderAll();
+    backToMyRules(); save(); renderAll();
     setStatus(`Loaded ${S.staff.length} staff from staff.json (local server).`);
   }catch(e){
     S.serverMode=false;
@@ -1844,6 +1867,8 @@ function plotRecord(rec){
   // already plotted in S.shifts are left alone. Fields added after this record was saved
   // (e.g. compulsoryStarters) fall back to sensible defaults instead of wiping out live data.
   const staffBefore=[...S.staff];
+  if(!recRules) recRules={rules:JSON.parse(rulesJSON()).rules};
+  Object.assign(recRules,{label:rec.label, year:rec.year, month:rec.month});
   S.staff=JSON.parse(JSON.stringify(d.staff));
   S.shiftTypes=JSON.parse(JSON.stringify(d.shiftTypes));
   S.keepApart=JSON.parse(JSON.stringify(d.keepApart));
@@ -1904,7 +1929,7 @@ function renderRecords(){
     btn.addEventListener("click", async ()=>{
       const rec=RECORDS.find(r=>r.id===btn.dataset.id); if(!rec) return;
       if(!await askConfirm({title:"Load this record onto the calendar?", confirmText:"Load record",
-        message:`This replaces your current staff, shift types, keep-apart pairs, leave and settings with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Any unsaved live changes will be lost (the record itself is untouched either way).`,
+        message:`This replaces your current staff and that month's leave and shifts with what was saved in this record, and switches the calendar to ${MONTHS[rec.month]} ${rec.year}. Its shift types and rules are used while you look at it (read-only); your own rules are not changed and come back when you leave the record. Any unsaved live changes will be lost (the record itself is untouched either way).`,
         details:[["Record",rec.label],["Month",`${MONTHS[rec.month]} ${rec.year}`]]})) return;
       plotRecord(rec);
     });
@@ -2077,6 +2102,7 @@ function syncSaveMonth(){ const b=$("recordSave"), empty=!monthHasShifts(); b.di
 function syncTryAnother(){ $("btnTryAnother").hidden=!A("sameRoster"); }
 function autoPlot(variant){
   variant=Number.isInteger(variant)?variant:0;
+  if(recRules){ backToMyRules(); renderAll(); }   // plan with your own rules, not the record's
   const {errors}=compulsoryStartersCheck();
   if(errors.length){ setStatus(`Can't run Auto Plot — fix Compulsory Starters (7) first: ${errors.join(" ")}`); return; }
 
