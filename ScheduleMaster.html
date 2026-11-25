@@ -44,6 +44,8 @@
 /* ---- selectable calendar color schemes (§ palette swatches near the calendar) ----
    each scheme restates ink+bg for light mode, then just the (darker) bg for dark mode,
    the same pattern the default "classic" scheme above already follows. */
+:root{ --sq-1:var(--chip-1); --sq-2:var(--chip-2); --sq-3:var(--chip-3); }
+:root[data-palette^="deep"]{ --sq-1:var(--chip-1-bg); --sq-2:var(--chip-2-bg); --sq-3:var(--chip-3-bg); }
 :root[data-palette="ocean"]{
   --chip-1:#0f7a8c; --chip-1-bg:#dcf3f6;
   --chip-2:#1f4e8c; --chip-2-bg:#dde8fb;
@@ -254,6 +256,37 @@ details.menu[open]>summary{background:var(--raised);}
 .calhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 4px 12px;}
 .calhead label{font-size:13px;}
 .calhead select{min-width:180px;}
+/* segmented switches: roster style, and the shift picker in Plot */
+.seg{display:inline-flex;gap:2px;padding:3px;margin-left:auto;background:var(--sunk);border:1px solid var(--border);border-radius:10px;}
+.seg label{position:relative;display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:7px;font-size:13px;color:var(--t2);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s;}
+.seg label:hover{color:var(--text);}
+.seg label:has(input:checked){background:var(--panel);color:var(--text);box-shadow:0 0 0 1px var(--border2);}
+.seg input,.mptypes input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none;}
+.seg label:has(input:focus-visible),.mptypes label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px;}
+#calwrap[data-style="calendar"] #calAlt{display:none;}
+#calwrap:not([data-style="calendar"]) .calInner{display:none;}
+/* roster in shift bands: one coloured band per shift in each day, names inside */
+.pbRow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:6px;}
+.pbHead div{text-align:center;font-size:12px;color:var(--muted);}
+.pbDay{min-height:var(--rowH,128px);border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--panel);overflow:hidden;}
+.pbDay.we{background:var(--sunk);}.pbDay.empty{border:0;background:none;}
+.pbNum{font-size:13px;font-weight:600;margin-bottom:2px;}
+.pbBand{background:var(--bg);color:var(--ink);border-radius:6px;padding:4px 8px;margin-top:4px;font-size:12px;font-weight:600;line-height:1.35;}
+.pbBand div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pbTag{display:block;font-size:10px;font-weight:500;opacity:.8;}
+.pbLeave{font-size:11px;color:var(--leave);margin-top:6px;line-height:1.35;}
+:root[data-palette^="deep"] .pbLeave{color:var(--leave-bg);}
+/* roster in shift lanes: each week a small timetable, one lane per shift */
+.plWeek{margin-bottom:12px;}
+.plRow{display:grid;grid-template-columns:64px repeat(7,minmax(0,1fr));}
+.plDates div{font-size:12px;font-weight:600;padding:4px 6px;}.plDates .plDate.we{color:var(--muted);}
+.plDates .plLab{font-family:var(--serif);font-weight:400;color:var(--muted);padding-left:0;}
+.plLane div{background:var(--bg);color:var(--ink);font-size:12px;font-weight:600;line-height:1.35;padding:4px 6px;border-left:2px solid var(--panel);}
+.plLane .plLab{font-size:11px;border-left:0;border-radius:6px 0 0 6px;}
+.plLane div:last-child{border-radius:0 6px 6px 0;}
+.plLane+.plLane div{border-top:2px solid var(--panel);}
+.plCount{font-weight:400;opacity:.75;}
+#calAlt [data-p]{cursor:pointer;}#calAlt [data-p]:hover{text-decoration:underline;}
 .calScroll{overflow-x:auto;}
 .calInner{min-width:760px;}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
@@ -284,8 +317,11 @@ details.menu[open]>summary{background:var(--raised);}
 .toolTabs button:hover{background:transparent;color:var(--text);}
 .toolTabs button[aria-selected=true]{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}
 .tools select{width:100%;}
-.mptypes{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 4px;}
-.mptypes label{display:inline-flex;align-items:center;gap:6px;}
+.mptypes{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:2px;padding:3px;margin:12px 0 4px;background:var(--sunk);border:1px solid var(--border);border-radius:10px;}
+.mptypes label{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--t2);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s;}
+.mptypes label::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--sw);flex:none;}
+.mptypes label:hover{color:var(--text);}
+.mptypes label:has(input:checked){background:var(--bg);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--sw);}
 .mpwd{text-align:center;font-size:11px;color:var(--muted);padding:2px 0;}
 .mpgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
 .mpday{height:38px;border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-size:12px;user-select:none;background:var(--panel);font-variant-numeric:tabular-nums;transition:border-color .12s var(--ease),background-color .12s var(--ease);}
@@ -431,8 +467,10 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
 /* ---------- print: the roster only, always the light version of the chosen scheme ----------
    A rota ledger, like the emailed PDF: the month in serif over a heavy rule, one ruled line per week with
    the week number in the margin, weekends shaded, each person's shift as a tinted chip. */
-@page{ margin: 10mm; }   /* no fixed size: the print dialog keeps Paper size and Layout */
+@page{ margin: 0; }   /* no room for the browser's own header and footer (date, title, page address, page number); no fixed size: the print dialog keeps Paper size and Layout */
 @media print{
+  body{padding:10mm !important;-webkit-box-decoration-break:clone;box-decoration-break:clone;}   /* the 10 mm margin, on every page */
+  .chip.pinned{box-shadow:none !important;}   /* placed by hand is for the screen */
   .top,.tools,.status,.saveRow,.histNote,.wkCol,#loginOverlay,#smDialog,.pwBack,#mailView,.calhead,.page:not([data-page=roster]){display:none!important;}
   .page[data-page=roster]{display:block!important;}
   .printOnly{display:block!important;}
@@ -445,7 +483,34 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
   .card,.calwrap{border:0;padding:0;border-radius:0;background:none;}
   .calScroll{overflow:visible;}.calInner{min-width:0;}
   /* header */
-  .rosterHead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin:0 0 6px;padding-bottom:8px;border-bottom:2px solid #221f1a;}
+  .rosterHead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin:0 0 14px;padding:0;border:0;}
+  .legend .pin-pill{display:none!important;}   /* placed by hand is for the screen */
+  #workloadCard .workloadHead,#workloadCard .tableWrap{display:none!important;}
+  /* shift bands and shift lanes, sized for the page */
+  .pbRow{gap:4px;margin-bottom:4px;}.pbHead div{font-size:9px;}
+  .pbDay{min-height:var(--rowH,110px);border:0.6pt solid #e2ded6;border-radius:6px;padding:4px;background:#fff;}.pbDay.we{background:#faf9f6;}.pbDay.empty{border:0;background:none;}
+  .pbNum{font-size:10px;}.pbBand{border-radius:4px;padding:2px 5px;margin-top:2px;font-size:9px;line-height:1.3;}.pbTag{font-size:7.5px;}.pbLeave{font-size:8px;margin-top:3px;line-height:1.3;}
+  .plWeek{margin-bottom:6px;break-inside:avoid;page-break-inside:avoid;}
+  .plRow{grid-template-columns:48px repeat(7,minmax(0,1fr));}
+  .plDates div{font-size:9px;padding:2px 4px;}
+  .plLane div{font-size:9px;line-height:1.3;padding:2px 4px;border-left-color:#fff;}.plLane .plLab{font-size:8.5px;border-radius:3px 0 0 3px;}.plLane div:last-child{border-radius:0;}
+  .plLane+.plLane div{border-top-color:#fff;}
+  #calAlt [data-p]:hover{text-decoration:none;}
+  /* workload in shift squares */
+  .pwHead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin:0 0 12px;}
+  .pwHead h2{font-family:var(--serif);font-size:26px;font-weight:500;line-height:1.05;margin:0;border:0;padding:0;}
+  .pwHead .eyebrow{font-family:var(--serif);font-size:12px;color:#736e64;margin-top:3px;}
+  .pwKey{display:flex;gap:14px;font-size:9.5px;color:#57524a;}
+  .pwKey span{display:inline-flex;align-items:center;gap:5px;}
+  .pwl{width:100%;border-collapse:collapse;}
+  .pwl th{font-weight:500;font-size:9.5px;color:#736e64;text-align:left;padding:4px 8px;border-bottom:0.6pt solid #e2ded6;}
+  .pwl td{padding:5px 8px;border-bottom:0.6pt solid #eeeae3;font-size:10.5px;}
+  .pwl .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .sqs{display:flex;flex-wrap:wrap;gap:3px;}
+  .sq{display:block;width:13px;height:13px;flex:none;border-radius:2px;}
+  .sq.free{background:#fff;box-shadow:inset 0 0 0 1px #d9d5cc;}
+  .sq.lv{background:var(--leave-bg);box-shadow:inset 0 0 0 1px var(--leave);}
+  .pwl .flag{color:var(--warn);}.pwl .ok{color:#9a958b;}
   .rosterHead h1{font-size:26px;line-height:1.05;}
   .rosterHead .eyebrow{font-family:var(--serif);font-size:12px;color:#736e64;margin-top:3px;}
   .rhRight{text-align:right;}
@@ -470,10 +535,10 @@ button.mail-toggle[aria-pressed="false"]{background:transparent;color:var(--mute
   .chip{font-size:9px;font-weight:600;line-height:1.25;padding:1px 4px 1px 5px;border-radius:3px;border:0;}
   :root:not([data-palette^="deep"]) .chip{border-left:2.5px solid currentColor;padding-left:4px;}
   .calweek{break-inside:avoid;page-break-inside:avoid;}
-  #calGrid{border-bottom:2px solid #221f1a;}
+  #calGrid{border-bottom:0.6pt solid #d9d5cc;}
   /* workload, on its own page */
   #workloadCard{page-break-before:always;break-before:page;margin-top:0;}
-  .workloadHead{border-bottom:2px solid #221f1a;padding-bottom:8px;margin-bottom:8px;}
+
   .workloadHead h2{font-family:var(--serif);font-size:22px;font-weight:500;}
   th,td{padding:5px 8px;border-bottom:0.6pt solid #d9d5cc;font-size:10.5px;}
   th{font-size:9.5px;color:#736e64;}
@@ -567,15 +632,19 @@ try{var p=(location.hash||"").slice(1)||localStorage.getItem("schedulemaster_pag
   <div class="roster">
     <div>
       <div class="calwrap" id="calwrap">
-        <div class="calhead"><label for="viewSel">View</label><select id="viewSel"></select></div>
+        <div class="calhead"><label for="viewSel">View</label><select id="viewSel"></select>
+          <div class="seg" role="radiogroup" aria-label="Roster style, also used for the printout" title="How the roster is shown here and on the printout">
+            <label><input type="radio" name="calStyle" value="calendar">Calendar</label><label><input type="radio" name="calStyle" value="bands">Shift bands</label><label><input type="radio" name="calStyle" value="lanes">Shift lanes</label>
+          </div></div>
         <div class="calScroll"><div class="calInner">
           <div class="grid" id="weekdayRow"></div>
           <div id="calGrid"></div>
-        </div></div>
+        </div><div id="calAlt"></div></div>
       </div>
       <div class="card workloadCard" id="workloadCard">
         <div class="workloadHead"><h2>Workload<span class="printOnly" id="wlMonth" style="display:inline"></span></h2><span class="small">Shifts against each person's quota</span></div>
         <div class="tableWrap"><table class="workload" id="workloadTable"></table></div>
+        <div id="printWorkload" class="printOnly"></div>
         <div id="coverageSection">
           <h2>Coverage check</h2>
           <div id="coverageCheck"></div>
@@ -946,7 +1015,7 @@ function defaultState(){
     expShifts:14, restHrs:11, rotation:"auto", requireAll:true, weekendLeaveNoQuota:true, includeCoverageInPrint:false,
     keepApart:[[null,null],[null,null]],
     compulsoryStarters: [],
-    leave:{}, shifts:{}, view:"__all__", showCounts:false, theme:null, palette:"classic",
+    leave:{}, shifts:{}, view:"__all__", showCounts:false, calStyle:"calendar", theme:null, palette:"classic",
     algo: defaultAlgo(),   // rule switches on the Algorithm tab
     pinned: []             // shifts placed by hand with the Plot tool, "YYYY-MM-DD|Name": Auto Plot keeps them
   };
@@ -1343,8 +1412,9 @@ $("leaveClearPerson").addEventListener("click",async()=>{
 // ---------- manual plot ----------
 function renderManualTypeRow(){
   const row=$("mpTypeRow"); row.innerHTML="";
-  S.shiftTypes.forEach(t=>row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="${esc(t.id)}">${esc(t.name)}</label>`);
-  row.innerHTML+=`<label style="display:flex;align-items:center;gap:3px;"><input type="radio" name="mpType" value="" checked>Off</label>`;
+  // a row of shift buttons in each shift's own colour (radio inputs underneath, so the keyboard still works)
+  S.shiftTypes.forEach((t,i)=>row.innerHTML+=`<label style="--sw:var(--sq-${i%3+1});--ink:${CHIP_COLORS[i%3][0]};--bg:${CHIP_COLORS[i%3][1]}"><input type="radio" name="mpType" value="${esc(t.id)}">${esc(t.name)}</label>`);
+  row.innerHTML+=`<label style="--sw:var(--border2);--ink:var(--text);--bg:var(--panel)"><input type="radio" name="mpType" value="" checked>Off</label>`;
 }
 function setStatus(msg){ $("status").textContent=msg; }
 
@@ -1501,29 +1571,118 @@ $("btnClear").addEventListener("click",async()=>{
   save(); renderAll();
 });
 $("btnPrint").addEventListener("click",()=>window.print());
-// Fit the calendar to one printed A4 landscape page. The row height comes from the page height and the
-// number of weeks (so 4, 5 and 6-week months all fill the page), not from measuring the screen layout,
-// which is still at screen width when beforeprint fires. Only a day holding more shifts than a row can
-// show makes it shrink (never below 55%).
+document.querySelectorAll('input[name="calStyle"]').forEach(r=>r.addEventListener("change",()=>{ if(r.checked){ S.calStyle=r.value; save(); renderCalAlt(); } }));
+// Fit the printed calendar to one A4 landscape page. Sizes come from the page and from how many names each day
+// or lane holds, not from measuring (the printed calendar is hidden on screen). Shift bands fill the page;
+// a month with more names than fit is scaled down (never below 55%). Shift lanes are scaled down only if needed.
 window.addEventListener("beforeprint",()=>{
-  const cw=$("calwrap"), grid=$("calGrid");
-  if(!cw||!grid) return;
-  const weeks=grid.querySelectorAll(".calweek").length||5;
-  let most=0; grid.querySelectorAll(".day").forEach(d=>{ most=Math.max(most,d.querySelectorAll(".chip").length); });
-  const avail=636;                                   // px under the title and weekday names on the page
-  const rowH=(avail-(weeks-1)*4)/weeks;
-  const need=24+(S.showCounts?12:0)+most*14;         // day number, counts, then one line per shift
-  const fit=Math.max(0.55,Math.min(1,rowH/need));
-  cw.style.zoom=fit<1?fit.toFixed(3):"";
-  grid.style.setProperty("--rowH",Math.floor(rowH/fit)+"px");
+  renderCalAlt();
+  if($("calwrap").dataset.style==="calendar"){            // the Calendar grid: as many shifts as a row can show
+    const cw=$("calwrap"), grid=$("calGrid");
+    const weeks=grid.querySelectorAll(".calweek").length||5;
+    let most=0; grid.querySelectorAll(".day").forEach(d=>{ most=Math.max(most,d.querySelectorAll(".chip").length); });
+    const rowH=(636-(weeks-1)*4)/weeks, need=24+(S.showCounts?12:0)+most*14, f=Math.max(0.55,Math.min(1,rowH/need));
+    cw.style.zoom=f<1?f.toFixed(3):""; grid.style.setProperty("--rowH",Math.floor(rowH/f)+"px");
+    return;
+  }
+  const host=$("calAlt"); if(!host) return;
+  const avail=640;                                    // px under the title on the page
+  const n=daysInMonth(S.year,S.month), first=weekdayOf(S.year,S.month,1), weeks=Math.ceil((first+n)/7);
+  const per=d=>{ const sh=S.shifts[ymd(S.year,S.month,d)]||{}; return S.shiftTypes.map(t=>Object.keys(sh).filter(p=>sh[p]===t.id&&(S.view==="__all__"||S.view===p)).length); };
+  const onLeave=d=>Object.keys(S.leave).some(p=>(S.view==="__all__"||S.view===p)&&isOnLeave(p,ymd(S.year,S.month,d)));
+  let fit=1;
+  if(S.calStyle==="lanes"){
+    let total=0;
+    for(let r=0;r<weeks;r++){
+      const days=[]; for(let c=0;c<7;c++){ const d=r*7+c-first+1; if(d>=1&&d<=n) days.push(d); }
+      total+=20+S.shiftTypes.reduce((a,t,i)=>a+6+12*Math.max(1,...days.map(d=>per(d)[i])),0)+(days.some(onLeave)?18:0);
+    }
+    fit=Math.max(0.55,Math.min(1,avail/total));
+    host.style.removeProperty("--rowH");
+  }else{
+    const rowH=(avail-14-weeks*4)/weeks;
+    let most=0; for(let d=1;d<=n;d++){ const c=per(d); most=Math.max(most,20+c.reduce((a,x)=>a+(x||S.showCounts?16+12*x:0),0)+(onLeave(d)?24:0)); }
+    fit=Math.max(0.55,Math.min(1,rowH/most));
+    host.style.setProperty("--rowH",Math.floor(rowH/fit)+"px");
+  }
+  host.style.zoom=fit<1?fit.toFixed(3):"";
 });
-window.addEventListener("afterprint",()=>{
-  const cw=$("calwrap"), grid=$("calGrid");
-  if(cw) cw.style.zoom="";
-  if(grid) grid.style.removeProperty("--rowH");
-});
+window.addEventListener("afterprint",()=>{ const host=$("calAlt"), cw=$("calwrap"), grid=$("calGrid");
+  if(host){ host.style.zoom=""; host.style.removeProperty("--rowH"); } if(cw) cw.style.zoom=""; if(grid) grid.style.removeProperty("--rowH"); });
 
+// The roster in the style picked above it: Calendar (the grid below), Shift bands (one coloured band per shift in
+// each day) or Shift lanes (each week a small timetable with one lane per shift). The printout uses the same style.
+function renderCalAlt(){
+  const host=$("calAlt"); if(!host) return;
+  const style=["bands","lanes"].includes(S.calStyle)?S.calStyle:"calendar";
+  $("calwrap").dataset.style=style;
+  document.querySelectorAll('input[name="calStyle"]').forEach(r=>{ r.checked=r.value===style; });
+  if(style==="calendar"){ host.innerHTML=""; return; }
+  const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], n=daysInMonth(S.year,S.month), first=weekdayOf(S.year,S.month,1);
+  const seen=p=>S.view==="__all__"||S.view===p;
+  const target=(t,we)=>we?t.weTarget:t.wdTarget;
+  const col=i=>`--ink:${CHIP_COLORS[i%3][0]};--bg:${CHIP_COLORS[i%3][1]}`;
+  const day=d=>{ const ds=ymd(S.year,S.month,d), sh=S.shifts[ds]||{};
+    return {d, ds, we:isWeekend(S.year,S.month,d), types:S.shiftTypes.map(t=>Object.keys(sh).filter(p=>sh[p]===t.id&&seen(p))),
+      leave:Object.keys(S.leave).filter(p=>seen(p)&&isOnLeave(p,ds))}; };
+  const weeks=[]; let w=Array(first).fill(0);
+  for(let d=1; d<=n; d++){ w.push(d); if(w.length===7){ weeks.push(w); w=[]; } }
+  if(w.length){ while(w.length<7) w.push(0); weeks.push(w); }
+  let h="";
+  const nm=(p,ds)=>`<span data-p="${esc(p)}" data-d="${esc(ds)}" title="Click to remove this shift">${esc(p)}</span>`;
+  if(style==="lanes"){
+    h='<div class="pl">';
+    weeks.forEach((w,r)=>{
+      const D=w.map(d=>d?day(d):null);
+      h+=`<div class="plWeek"><div class="plRow plDates"><div class="plLab">Wk ${isoWeek(S.year,S.month,r*7+2-first)}</div>`+w.map((d,i)=>`<div class="plDate${i===0||i===6?" we":""}">${d?WD[i]+" "+d:""}</div>`).join("")+`</div>`;
+      S.shiftTypes.forEach((t,i)=>{
+        h+=`<div class="plRow plLane" style="${col(i)}"><div class="plLab">${esc(t.name)}</div>`+D.map(x=>`<div>${x?x.types[i].map(p=>nm(p,x.ds)).join("<br>")+(S.showCounts?` <span class="plCount">${x.types[i].length}/${esc(target(t,x.we))}</span>`:""):""}</div>`).join("")+`</div>`;
+      });
+      if(D.some(x=>x&&x.leave.length)) h+=`<div class="plRow plLane" style="--ink:var(--leave);--bg:var(--leave-bg)"><div class="plLab">Leave</div>`+D.map(x=>`<div>${x?x.leave.map(esc).join("<br>"):""}</div>`).join("")+`</div>`;
+      h+=`</div>`;
+    });
+  } else {
+    h='<div class="pb"><div class="pbRow pbHead">'+WD.map(x=>`<div>${x}</div>`).join("")+`</div>`;
+    weeks.forEach(w=>{
+      h+='<div class="pbRow">'+w.map(d=>{
+        if(!d) return `<div class="pbDay empty"></div>`;
+        const x=day(d);
+        return `<div class="pbDay${x.we?" we":""}"><div class="pbNum">${d}</div>`+S.shiftTypes.map((t,i)=>{
+          const c=S.showCounts?` ${x.types[i].length}/${esc(target(t,x.we))}`:"";
+          return x.types[i].length||S.showCounts?`<div class="pbBand" style="${col(i)}"><span class="pbTag">${esc(t.name)}${c}</span>${x.types[i].map(p=>`<div>${nm(p,x.ds)}</div>`).join("")}</div>`:"";
+        }).join("")+(x.leave.length?`<div class="pbLeave">Leave: ${x.leave.map(esc).join(", ")}</div>`:"")+`</div>`;
+      }).join("")+`</div>`;
+    });
+  }
+  host.innerHTML=h+`</div>`;
+  host.querySelectorAll("[data-p]").forEach(el=>el.addEventListener("click",()=>removeShiftAsk(el.dataset.p,el.dataset.d)));
+}
+// The printed Workload: one square per expected shift, coloured by shift type; empty = quota not used, red = leave.
+function renderPrintWorkload(rows){
+  const host=$("printWorkload"); if(!host) return;
+  const exp=S.expShifts;
+  const key=S.shiftTypes.map((t,i)=>`<span><b class="sq" style="background:var(--sq-${i%3+1})"></b>${esc(t.name)}</span>`).join("")+
+    `<span><b class="sq free"></b>Not used</span><span><b class="sq lv"></b>Leave</span>`;
+  let h=`<div class="pwHead"><div><h2>Workload</h2><div class="eyebrow">${MONTHS[S.month]} ${S.year} · one square per shift of the ${esc(exp)} expected</div></div><div class="pwKey">${key}</div></div>`+
+    `<table class="pwl"><tr><th>Staff</th><th>Shifts</th><th class="num">Total</th>`+S.shiftTypes.map(t=>`<th class="num">${esc(t.name)}</th>`).join("")+`<th class="num">Leave</th><th class="num">Longest run</th><th>Status</th></tr>`;
+  rows.forEach(r=>{
+    let sq=""; r.counts.forEach((c,i)=>{ sq+=`<b class="sq" style="background:var(--sq-${i%3+1})"></b>`.repeat(c); });
+    sq+=`<b class="sq free"></b>`.repeat(Math.max(0,r.quota-r.total))+`<b class="sq lv"></b>`.repeat(Math.max(0,exp-r.quota));
+    h+=`<tr><td>${esc(r.person)}</td><td><div class="sqs">${sq}</div></td><td class="num">${r.total}/${r.quota}</td>`+r.counts.map(c=>`<td class="num">${c}</td>`).join("")+
+      `<td class="num">${r.leaveN}</td><td class="num">${r.run}</td><td>${r.status==="OK"?'<span class="ok">OK</span>':`<span class="flag">${esc(r.status.charAt(0).toUpperCase()+r.status.slice(1))}</span>`}</td></tr>`;
+  });
+  host.innerHTML=h+`</table>`;
+}
+async function removeShiftAsk(who,day){
+  const t=shiftById((S.shifts[day]||{})[who]);
+  const [yy,mm,dd]=day.split("-").map(Number);
+  if(!await askConfirm({title:"Remove this shift?", danger:true, confirmText:"Remove shift",
+    message:"The shift is taken off the calendar. You can plot it again with Manual Plot.",
+    details:[["Person",who],["Date",`${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekdayOf(yy,mm-1,dd)]} ${dd} ${MONTHS[mm-1]} ${yy}`],["Shift",t?t.name:""]]})) return;
+  setPersonShift(day,who,null); save(); renderAll();
+}
 function renderCalendar(){
+  renderCalAlt();
   $("calTitle").textContent=`${MONTHS[S.month]} ${S.year}`;
   $("wlMonth").textContent=` · ${MONTHS[S.month]} ${S.year}`;   // shown on the printout only
   $("showCounts").checked=S.showCounts;
@@ -1572,15 +1731,7 @@ function renderCalendar(){
     }
     html+="</div>";
     cell.innerHTML=html;
-    cell.querySelectorAll(".chip[data-p]").forEach(chip=>chip.addEventListener("click",async()=>{
-      const who=chip.dataset.p, day=chip.dataset.d;
-      const t=shiftById((S.shifts[day]||{})[who]);
-      const [yy,mm,dd]=day.split("-").map(Number);
-      if(!await askConfirm({title:"Remove this shift?", danger:true, confirmText:"Remove shift",
-        message:"The shift is taken off the calendar. You can plot it again with Manual Plot.",
-        details:[["Person",who],["Date",`${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekdayOf(yy,mm-1,dd)]} ${dd} ${MONTHS[mm-1]} ${yy}`],["Shift",t?t.name:""]]})) return;
-      setPersonShift(day,who,null); save(); renderAll();
-    }));
+    cell.querySelectorAll(".chip[data-p]").forEach(chip=>chip.addEventListener("click",()=>removeShiftAsk(chip.dataset.p,chip.dataset.d)));
     addCell(cell);
   }
   // pad the final week out to 7 cells so its grid columns still line up
@@ -1602,7 +1753,7 @@ function renderWorkload(){
   const hist=A("history")?monthHistory():null, hasH=!!(hist&&hist.months.length);
   const hNote=n=>hasH?` <span class="small histNote">(${n} in ${hist.months.length===1?"last month":"last "+hist.months.length+" months"})</span>`:"";
   let head=`<tr><th>Staff</th><th>Total</th><th>Quota</th>`+S.shiftTypes.map(t=>`<th>${esc(t.name)}</th>`).join("")+`<th class="wkCol" title="Shifts on a Saturday or Sunday">Weekends</th><th>Leave</th><th>Longest run</th><th>Status</th></tr>`;
-  let body="";
+  let body=""; const rows=[];
   S.staff.forEach(person=>{
     const total=totalShiftsFor(person,null);
     const quota=quotaFor(person);
@@ -1636,10 +1787,12 @@ function renderWorkload(){
       }
     }
     const status=problems.length?[...new Set(problems)].join(", "):"OK";
+    rows.push({person,total,quota,counts,leaveN,run,status});
     const wkN=monthDates.filter(d=>{ const [yy,mm,dd]=d.split("-").map(Number); return isWeekend(yy,mm-1,dd)&&S.shifts[d][person]; }).length;
     body+=`<tr><td>${esc(person)}</td><td>${total}</td><td>${quota}</td>`+counts.map((c,i)=>`<td>${c}${isOvernight(S.shiftTypes[i])?hNote(hist?hist.N[person]||0:0):""}</td>`).join("")+`<td class="wkCol">${wkN}${hNote(hist?hist.W[person]||0:0)}</td><td>${leaveN}</td><td>${run}</td><td class="${status==="OK"?"ok":"bad"}">${status}</td></tr>`;
   });
   table.innerHTML=head+body;
+  renderPrintWorkload(rows);
 }
 function renderCoverage(){
   const n=daysInMonth(S.year,S.month);
